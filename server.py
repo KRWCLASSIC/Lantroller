@@ -17,6 +17,8 @@ import shutil
 from flask import Flask, send_file, request, jsonify, Response, stream_with_context
 import socket
 import locale
+import logging
+from logging.handlers import RotatingFileHandler
 
 try:
     from zeroconf import Zeroconf, ServiceInfo
@@ -33,6 +35,15 @@ PORT = 5000
 
 app = Flask(__name__)
 temp_html_path = None
+LOG_PATH = os.path.join(tempfile.gettempdir(), "lantroller.log")
+
+# Configure rotating file logging in temp
+logger = logging.getLogger("lantroller")
+if not logger.handlers:
+    logger.setLevel(logging.INFO)
+    _handler = RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=3, encoding='utf-8')
+    _handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    logger.addHandler(_handler)
 
 def _file_exists(path: str) -> bool:
     try:
@@ -137,9 +148,9 @@ def fetch_ui():
         temp_html_path = os.path.join(tempfile.gettempdir(), temp_name)
         with open(temp_html_path, "w", encoding="utf-8") as f:
             f.write(r.text)
-        print(f"[INFO] UI fetched to {temp_html_path}")
+        logger.info(f"UI fetched to {temp_html_path}")
     except Exception as e:
-        print(f"[ERROR] Failed to fetch UI: {e}")
+        logger.error(f"Failed to fetch UI: {e}")
 
 def update_self():
     try:
@@ -148,10 +159,11 @@ def update_self():
         script_path = os.path.realpath(sys.argv[0])
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(r.text)
-        print("[INFO] Backend updated, restarting...")
+        logger.info("Backend updated, restarting...")
         # Relaunch windowless (pythonw/NO_WINDOW on Windows)
         launch_windowless_with_python_and_exit(sys.argv[1:])
     except Exception as e:
+        logger.error(f"Update failed: {e}")
         return f"Update failed: {e}"
 
 @app.route("/ui")
@@ -166,6 +178,7 @@ def actions():
     if not cmd:
         return jsonify({"error": "No command provided"}), 400
     try:
+        logger.info(f"Action exec: {cmd}")
         subprocess.Popen(cmd, shell=True)
         return jsonify({"status": f"Executed: {cmd}"})
     except Exception as e:
@@ -180,6 +193,7 @@ def exec_stream():
 
     def generate():
         try:
+            logger.info(f"Live exec: {cmd}")
             process = subprocess.Popen(
                 cmd,
                 shell=True,
@@ -210,6 +224,23 @@ def exec_stream():
 def health():
     return jsonify({"ok": True})
 
+@app.get("/logs")
+def get_logs():
+    """Return the last N lines of the log file as text/plain.
+    Query param: tail (int) default 500
+    """
+    tail = request.args.get('tail', default=500, type=int)
+    tail = max(1, min(tail or 500, 5000))
+    try:
+        if not os.path.exists(LOG_PATH):
+            return Response("<no logs yet>\n", mimetype="text/plain")
+        with open(LOG_PATH, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
+        text = ''.join(lines[-tail:])
+        return Response(text, mimetype="text/plain")
+    except Exception as e:
+        return Response(f"Error reading logs: {e}\n", mimetype="text/plain", status=500)
+
 @app.route("/refetch-ui")
 def refetch_ui():
     fetch_ui()
@@ -227,9 +258,18 @@ def restart():
         try:
             launch_windowless_with_python_and_exit(sys.argv[1:])
         except Exception as e:
-            print(f"[ERROR] Restart failed: {e}")
+            logger.error(f"Restart failed: {e}")
     threading.Thread(target=_restart).start()
     return jsonify({"status": "Restarting server..."})
+
+@app.route("/stop")
+def stop():
+    logger.info("Stop requested via /stop")
+    def _stop():
+        time.sleep(0.2)
+        os._exit(0)
+    threading.Thread(target=_stop).start()
+    return jsonify({"status": "Stopping server..."})
 
 def install_startup():
     """Install app to run on logon with highest privileges via Scheduled Task.
@@ -267,12 +307,12 @@ def install_startup():
         )
         if rc <= 32:
             raise RuntimeError(f"ShellExecuteW failed with code {rc}")
-        print(f"[INFO] Requested creation of elevated scheduled task '{task_name}'.")
-        print("[INFO] If you accepted the UAC prompt, the task will run with highest privileges on logon.")
+        logger.info(f"Requested creation of elevated scheduled task '{task_name}'.")
+        logger.info("If you accepted the UAC prompt, the task will run with highest privileges on logon.")
         return
     except Exception as e:
-        print(f"[WARN] Could not create elevated scheduled task (maybe UAC declined): {e}")
-        print("[WARN] Falling back to per-user Startup shortcut (not elevated).")
+        logger.warning(f"Could not create elevated scheduled task (maybe UAC declined): {e}")
+        logger.warning("Falling back to per-user Startup shortcut (not elevated).")
 
     # Fallback: non-elevated Startup folder launcher (VBS + pythonw to avoid console window)
     startup_dir = os.path.join(os.getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
@@ -286,7 +326,7 @@ def install_startup():
     )
     with open(vbs_path, "w", encoding="utf-8") as f:
         f.write(vbs)
-    print(f"[INFO] Installed non-elevated startup launcher: {vbs_path}")
+    logger.info(f"Installed non-elevated startup launcher: {vbs_path}")
 
 def register_mdns():
     zeroconf = Zeroconf()
@@ -300,7 +340,7 @@ def register_mdns():
         server=f"{HOSTNAME}."
     )
     zeroconf.register_service(info)
-    print(f"[INFO] mDNS registered as {HOSTNAME}:{PORT}")
+    logger.info(f"mDNS registered as {HOSTNAME}:{PORT}")
 
 if __name__ == "__main__":
     if "--install" in sys.argv:

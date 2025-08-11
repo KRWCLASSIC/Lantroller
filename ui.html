@@ -32,19 +32,34 @@ button.danger { background: linear-gradient(135deg, var(--danger), #b91c1c); bor
 .input { display:flex; gap:8px; width:100%; }
 .input input { flex:1; min-width: 140px; background:#0f132d; color: var(--text); border:1px solid var(--border); border-radius:8px; padding:10px 12px; outline:none; }
 .terminal { height: 280px; overflow:auto; background:#0a0d1c; border:1px solid var(--border); border-radius: 10px; padding:12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; white-space: pre-wrap; }
+.terminal.small { height: 180px; }
 .badge { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); padding:6px 8px; border-radius:999px; color: var(--muted); }
 .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono"; background:#11152d; border:1px solid var(--border); padding:2px 6px; border-radius:6px; color: var(--text); }
 .footer { margin-top: 18px; display:flex; gap:8px; flex-wrap:wrap; justify-content: space-between; color: var(--muted); font-size: 12px; }
+.mt-12 { margin-top:12px; }
+.flex-1 { flex:1; }
 .link { color: var(--text); text-decoration: underline dotted; cursor: pointer; }
 .hidden { display:none; }
 .muted { color: var(--muted); }
 .mb-14 { margin-bottom:14px; }
 .mb-10 { margin-bottom:10px; }
+@media (max-width: 640px) {
+  .container { padding: 16px; }
+  .grid { grid-template-columns: 1fr; }
+  .row { gap: 10px; }
+  .input { flex-direction: column; }
+  .input input { width: 100%; }
+  .input button { width: 100%; }
+  .buttons { flex-direction: column; }
+  .buttons button { width: 100%; }
+  .terminal { height: 220px; }
+  .terminal.small { height: 140px; }
+}
 </style>
 <script>
 // Versions (edit here)
-const UI_VERSION = '1';
-const BACKEND_VERSION = '1';
+const UI_VERSION = 'v2';
+const BACKEND_VERSION = 'v1';
 
 async function run(cmd) {
   const res = await fetch(`/actions?cmd=${encodeURIComponent(cmd)}`);
@@ -145,11 +160,26 @@ async function pollHealth() {
   }
 }
 
+async function loadLogs() {
+  try {
+    const res = await fetch('/logs?tail=500', { cache: 'no-store' });
+    const text = await res.text();
+    const area = document.getElementById('logs');
+    area.textContent = text || '<no logs yet>';
+    area.scrollTop = area.scrollHeight;
+  } catch (e) {
+    const area = document.getElementById('logs');
+    area.textContent = `Error loading logs: ${e}`;
+  }
+}
+
 window.addEventListener('load', () => {
   const verEl = document.getElementById('versions');
   if (verEl) verEl.textContent = `UI ${UI_VERSION} · Backend ${BACKEND_VERSION}`;
   pollHealth();
   setInterval(pollHealth, 5000);
+  loadLogs();
+  setInterval(loadLogs, 5000);
 });
 </script>
 </head>
@@ -195,6 +225,7 @@ window.addEventListener('load', () => {
           <button onclick="doAction('/refetch-ui')">Refetch UI</button>
           <button onclick="doAction('/update')">Update Backend</button>
           <button onclick="doAction('/restart')">Restart Server</button>
+          <button class="danger" onclick="doAction('/stop')">Stop Lantroller</button>
         </div>
       </div>
     </div>
@@ -211,6 +242,16 @@ window.addEventListener('load', () => {
       <button id="stopBtn" onclick="stopExec()" disabled>Stop</button>
     </div>
     <div class="terminal" id="output"></div>
+  </div>
+
+  <div class="panel mt-12">
+    <div class="row mb-10">
+      <div class="badge">Logs</div>
+      <div class="badge muted">Last 500 lines · auto-refresh</div>
+      <div class="flex-1"></div>
+      <button onclick="loadLogs()">Refresh</button>
+    </div>
+    <div class="terminal small" id="logs"></div>
   </div>
 
   <div class="footer">
