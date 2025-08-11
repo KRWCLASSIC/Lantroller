@@ -3,7 +3,12 @@ import sys
 import tempfile
 import random
 import string
-import requests
+try:
+    import requests
+except ImportError:
+    # Ensure 'requests' is available in the current interpreter environment
+    subprocess.run([sys.executable, "-m", "pip", "install", "requests"])  # best-effort
+    import requests
 import subprocess
 import threading
 import time
@@ -41,22 +46,21 @@ def resolve_python_invocation(script_path: str):
     then 'python3' or 'python' from PATH.
     args_list always includes the executable/program name as argv[0].
     """
-    # 1) Prefer 'py' launcher if present
-    py_launcher = shutil.which('py')
-    if py_launcher:
-        return (py_launcher, [py_launcher, '-3', script_path])
+    # 1) Prefer 'python' from PATH to match how user ran `python server.py`
+    found = shutil.which('python')
+    if found:
+        return (found, [found, script_path])
 
-    # 2) sys.executable if it exists
+    # 2) Next try 'python3' on PATH
+    found = shutil.which('python3')
+    if found:
+        return (found, [found, script_path])
+
+    # 3) Fallback to the current interpreter if it exists
     if _file_exists(sys.executable):
         return (sys.executable, [sys.executable, script_path])
 
-    # 3) PATH fallbacks
-    for name in ('python3', 'python'):
-        found = shutil.which(name)
-        if found:
-            return (found, [found, script_path])
-
-    # 4) Last resort: try direct call, will likely fail
+    # 4) Last resort: use bare 'python' and rely on PATH
     return ('python', ['python', script_path])
 
 def quote_arg(arg: str) -> str:
