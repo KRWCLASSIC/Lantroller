@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>PC Control Panel</title>
+<style>
+body { font-family: sans-serif; background: #f5f5f5; text-align: center; margin: 0; padding: 20px; }
+button { padding: 12px 20px; margin: 8px; font-size: 16px; border: none; border-radius: 6px; cursor: pointer; background: #333; color: white; }
+button:hover { background: #555; }
+.container { max-width: 500px; margin: auto; }
+</style>
+<script>
+async function run(cmd) {
+    const res = await fetch(`/actions?cmd=${encodeURIComponent(cmd)}`);
+    alert(await res.text());
+}
+async function doAction(url) {
+    const res = await fetch(url);
+    alert(await res.text());
+}
+</script>
+</head>
+<body>
+<div class="container">
+    <h1>PC Control</h1>
+    <button onclick="run('notepad')">Open Notepad</button>
+    <button onclick="run('shutdown /s /t 0')">Shutdown</button>
+    <button onclick="run('shutdown /r /t 0')">Restart PC</button>
+    <button onclick="doAction('/refetch-ui')">Refetch UI</button>
+    <button onclick="doAction('/update')">Update Backend</button>
+    <button onclick="doAction('/restart')">Restart Server</button>
+</div>
+</body>
+</html>
