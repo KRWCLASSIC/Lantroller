@@ -71,6 +71,22 @@ def quote_arg(arg: str) -> str:
         return '"' + arg.replace('"', '\\"') + '"'
     return arg
 
+def launch_with_path_python_and_exit(extra_args=None):
+    """Launch the script using the in-PATH `python` and terminate current process.
+
+    Uses subprocess with an arg list to avoid quoting issues. Falls back to bare
+    'python' if not resolvable via which.
+    """
+    if extra_args is None:
+        extra_args = []
+    python_cmd = shutil.which('python') or 'python'
+    script_path = os.path.realpath(sys.argv[0])
+    cmd = [python_cmd, script_path] + list(extra_args)
+    try:
+        subprocess.Popen(cmd, close_fds=True)
+    finally:
+        os._exit(0)
+
 def fetch_ui():
     global temp_html_path
     try:
@@ -92,15 +108,8 @@ def update_self():
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(r.text)
         print("[INFO] Backend updated, restarting...")
-        exe, base_args = resolve_python_invocation(script_path)
-        # preserve any original CLI args beyond the script path
-        extra_args = sys.argv[1:]
-        argv = base_args + extra_args
-        if os.name == 'nt' and os.path.splitext(exe)[1].lower() == '.exe':
-            os.execv(exe, argv)
-        else:
-            # Use PATH lookup for non-absolute executables like 'py' or 'python'
-            os.execvp(exe, argv)
+        # Relaunch using in-PATH python
+        launch_with_path_python_and_exit(sys.argv[1:])
     except Exception as e:
         return f"Update failed: {e}"
 
@@ -162,13 +171,8 @@ def update():
 def restart():
     def _restart():
         time.sleep(1)
-        exe, base_args = resolve_python_invocation(os.path.realpath(sys.argv[0]))
-        argv = base_args + sys.argv[1:]
         try:
-            if os.name == 'nt' and os.path.splitext(exe)[1].lower() == '.exe':
-                os.execv(exe, argv)
-            else:
-                os.execvp(exe, argv)
+            launch_with_path_python_and_exit(sys.argv[1:])
         except Exception as e:
             print(f"[ERROR] Restart failed: {e}")
     threading.Thread(target=_restart).start()
@@ -183,9 +187,9 @@ def install_startup():
     script_path = os.path.realpath(sys.argv[0])
     task_name = "Lantroller"
 
-    # Prepare elevated call to schtasks with robust Python invocation
-    exe, base_args = resolve_python_invocation(script_path)
-    cmd_line = ' '.join(quote_arg(a) for a in base_args)
+    # Prepare elevated call to schtasks using PATH-resolved python
+    python_cmd = shutil.which('python') or 'python'
+    cmd_line = ' '.join(quote_arg(a) for a in [python_cmd, script_path])
     schtasks_args = f'/Create /TN {quote_arg(task_name)} /TR {quote_arg(cmd_line)} /SC ONLOGON /RL HIGHEST /F'
 
     try:
@@ -212,8 +216,8 @@ def install_startup():
     startup_dir = os.path.join(os.getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
     os.makedirs(startup_dir, exist_ok=True)
     target_path = os.path.join(startup_dir, os.path.basename(sys.argv[0]).replace(".py", ".bat"))
-    exe, base_args = resolve_python_invocation(script_path)
-    bat_line = ' '.join(quote_arg(a) for a in base_args)
+    python_cmd = shutil.which('python') or 'python'
+    bat_line = ' '.join(quote_arg(a) for a in [python_cmd, script_path])
     if not os.path.exists(target_path):
         with open(target_path, "w", encoding="utf-8") as f:
             f.write("@echo off\n")
