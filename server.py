@@ -72,6 +72,37 @@ def quote_arg(arg: str) -> str:
         return '"' + arg.replace('"', '\\"') + '"'
     return arg
 
+def resolve_pythonw_invocation(script_path: str):
+    """Return (exe, args_list) prioritizing a windowless Python (pythonw) on Windows.
+
+    Order:
+      1) 'pythonw' from PATH
+      2) sibling pythonw.exe next to PATH 'python'
+      3) sibling pythonw.exe next to sys.executable
+      4) bare 'pythonw' (hope PATH resolves)
+      5) fallback to resolve_python_invocation
+    """
+    # 1) PATH 'pythonw'
+    found_w = shutil.which('pythonw')
+    if found_w:
+        return (found_w, [found_w, script_path])
+
+    # 2) Sibling next to PATH 'python'
+    found_py = shutil.which('python')
+    if found_py:
+        candidate = os.path.join(os.path.dirname(found_py), 'pythonw.exe')
+        if _file_exists(candidate):
+            return (candidate, [candidate, script_path])
+
+    # 3) Sibling next to sys.executable
+    if _file_exists(sys.executable):
+        candidate = os.path.join(os.path.dirname(sys.executable), 'pythonw.exe')
+        if _file_exists(candidate):
+            return (candidate, [candidate, script_path])
+
+    # 4) Bare 'pythonw'
+    return ('pythonw', ['pythonw', script_path])
+
 def launch_with_path_python_and_exit(extra_args=None):
     """Launch the script using the in-PATH `python` and terminate current process.
 
@@ -200,19 +231,28 @@ def install_startup():
     script_path = os.path.realpath(sys.argv[0])
     task_name = "Lantroller"
 
-    # Prepare elevated call to schtasks using PATH-resolved python
-    python_cmd = shutil.which('python') or 'python'
-    cmd_line = ' '.join(quote_arg(a) for a in [python_cmd, script_path])
-    schtasks_args = f'/Create /TN {quote_arg(task_name)} /TR {quote_arg(cmd_line)} /SC ONLOGON /RL HIGHEST /F'
+    # Prepare elevated calls to schtasks using windowless pythonw
+    pythonw_exe, argv = resolve_pythonw_invocation(script_path)
+    cmd_line = ' '.join(quote_arg(a) for a in argv)
+    schtasks_delete_args = f'/Delete /TN {quote_arg(task_name)} /F'
+    schtasks_create_args = f'/Create /TN {quote_arg(task_name)} /TR {quote_arg(cmd_line)} /SC ONLOGON /RL HIGHEST /F'
 
     try:
-        # Trigger UAC prompt to run schtasks elevated
-        # ShellExecuteW returns >32 on success
+        # First, try to delete any existing task (ignore failures)
+        ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            "schtasks.exe",
+            schtasks_delete_args,
+            None,
+            1,
+        )
+        # Then create the task elevated
         rc = ctypes.windll.shell32.ShellExecuteW(
             None,
             "runas",
             "schtasks.exe",
-            schtasks_args,
+            schtasks_create_args,
             None,
             1,
         )
@@ -225,19 +265,19 @@ def install_startup():
         print(f"[WARN] Could not create elevated scheduled task (maybe UAC declined): {e}")
         print("[WARN] Falling back to per-user Startup shortcut (not elevated).")
 
-    # Fallback: non-elevated Startup folder .bat launcher
+    # Fallback: non-elevated Startup folder launcher (VBS + pythonw to avoid console window)
     startup_dir = os.path.join(os.getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
     os.makedirs(startup_dir, exist_ok=True)
-    target_path = os.path.join(startup_dir, os.path.basename(sys.argv[0]).replace(".py", ".bat"))
-    python_cmd = shutil.which('python') or 'python'
-    bat_line = ' '.join(quote_arg(a) for a in [python_cmd, script_path])
-    if not os.path.exists(target_path):
-        with open(target_path, "w", encoding="utf-8") as f:
-            f.write("@echo off\n")
-            f.write(f"start \"\" {bat_line}\n")
-        print(f"[INFO] Installed non-elevated startup launcher: {target_path}")
-    else:
-        print("[INFO] Non-elevated startup launcher already present")
+    vbs_path = os.path.join(startup_dir, os.path.basename(sys.argv[0]).replace(".py", ".vbs"))
+    pythonw_path = pythonw_exe if _file_exists(pythonw_exe) else (shutil.which('pythonw') or 'pythonw')
+    cmd_str = f'{quote_arg(pythonw_path)} {quote_arg(script_path)}'
+    vbs = (
+        'Set WshShell = CreateObject("WScript.Shell")\n'
+        f'WshShell.Run {quote_arg(cmd_str)}, 0\n'
+    )
+    with open(vbs_path, "w", encoding="utf-8") as f:
+        f.write(vbs)
+    print(f"[INFO] Installed non-elevated startup launcher: {vbs_path}")
 
 def register_mdns():
     zeroconf = Zeroconf()
