@@ -42,5 +42,8 @@ if %errorlevel% neq 0 (
 echo Installation/Update complete.
 echo You can now run: python server.py
 echo Or to install as a startup service (with UAC prompt): python server.py --install
-pause
+
+echo Running server.py with --install in a new PowerShell session to refresh PATH...
+start powershell.exe -NoExit -Command "cd '%SCRIPT_DIR%'; python server.py --install; Read-Host 'Press Enter to continue...'"
+
 exit /b 0
