@@ -1,9 +1,12 @@
 @echo off
-set SCRIPT_DIR=%~dp0
+set INSTALL_DIR=%LOCALAPPDATA%\Lantroller
 set PYTHON_URL=https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/server.py
 set REQUIREMENTS_URL=https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/requirements.txt
-set SERVER_FILE=%SCRIPT_DIR%server.py
-set REQUIREMENTS_FILE=%SCRIPT_DIR%requirements.txt
+set SERVER_FILE=%INSTALL_DIR%\server.py
+set REQUIREMENTS_FILE=%INSTALL_DIR%\requirements.txt
+
+echo Creating installation directory %INSTALL_DIR%...
+mkdir "%INSTALL_DIR%" 2>nul
 
 echo Checking for Python...
 where python >nul 2>nul
@@ -44,6 +47,6 @@ echo You can now run: python server.py
 echo Or to install as a startup service (with UAC prompt): python server.py --install
 
 echo Running server.py with --install in a new PowerShell session to refresh PATH...
-start powershell.exe -NoExit -Command "cd '%SCRIPT_DIR%'; python server.py --install; Read-Host 'Press Enter to continue...'"
+start powershell.exe -NoExit -Command "cd '%INSTALL_DIR%'; python server.py --install; Read-Host 'Press Enter to continue...'"
 
 exit /b 0
