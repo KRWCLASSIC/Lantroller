@@ -103,21 +103,30 @@ def resolve_pythonw_invocation(script_path: str):
     # 4) Bare 'pythonw'
     return ('pythonw', ['pythonw', script_path])
 
-def launch_with_path_python_and_exit(extra_args=None):
-    """Launch the script using the in-PATH `python` and terminate current process.
+def launch_windowless_with_python_and_exit(extra_args=None):
+    """Launch the script in a windowless way on Windows (pythonw or CREATE_NO_WINDOW) and exit.
 
-    Uses subprocess with an arg list to avoid quoting issues. Falls back to bare
-    'python' if not resolvable via which.
+    On non-Windows platforms, falls back to in-PATH python relaunch.
     """
     if extra_args is None:
         extra_args = []
-    python_cmd = shutil.which('python') or 'python'
     script_path = os.path.realpath(sys.argv[0])
-    cmd = [python_cmd, script_path] + list(extra_args)
-    try:
-        subprocess.Popen(cmd, close_fds=True)
-    finally:
-        os._exit(0)
+    if os.name == 'nt':
+        try:
+            pythonw_exe, argv = resolve_pythonw_invocation(script_path)
+            cmd = argv + list(extra_args)
+            creation = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            subprocess.Popen(cmd, creationflags=creation, close_fds=True)
+        except Exception:
+            # Fallback to PATH python but request no window
+            python_cmd = shutil.which('python') or 'python'
+            cmd = [python_cmd, script_path] + list(extra_args)
+            creation = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            subprocess.Popen(cmd, creationflags=creation, close_fds=True)
+        finally:
+            os._exit(0)
+    else:
+        launch_with_path_python_and_exit(extra_args)
 
 def fetch_ui():
     global temp_html_path
@@ -140,8 +149,8 @@ def update_self():
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(r.text)
         print("[INFO] Backend updated, restarting...")
-        # Relaunch using in-PATH python
-        launch_with_path_python_and_exit(sys.argv[1:])
+        # Relaunch windowless (pythonw/NO_WINDOW on Windows)
+        launch_windowless_with_python_and_exit(sys.argv[1:])
     except Exception as e:
         return f"Update failed: {e}"
 
@@ -216,7 +225,7 @@ def restart():
     def _restart():
         time.sleep(1)
         try:
-            launch_with_path_python_and_exit(sys.argv[1:])
+            launch_windowless_with_python_and_exit(sys.argv[1:])
         except Exception as e:
             print(f"[ERROR] Restart failed: {e}")
     threading.Thread(target=_restart).start()
