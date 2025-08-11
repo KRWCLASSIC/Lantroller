@@ -17,8 +17,8 @@ except ImportError:
     from zeroconf import Zeroconf, ServiceInfo
 
 # ===== CONFIG =====
-PYTHON_UPDATE_URL = "https://raw.githubusercontent.com/YourUser/YourRepo/main/server.py"
-HTML_UPDATE_URL = "https://raw.githubusercontent.com/YourUser/YourRepo/main/ui.html"
+PYTHON_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/server.py"
+HTML_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/ui.html"
 HOSTNAME = "controlled.local"
 PORT = 5000
 # ==================
