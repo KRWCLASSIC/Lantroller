@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 import ctypes
+import shutil
 from flask import Flask, send_file, request, jsonify, Response, stream_with_context
 import socket
 
@@ -26,6 +27,45 @@ PORT = 5000
 
 app = Flask(__name__)
 temp_html_path = None
+
+def _file_exists(path: str) -> bool:
+    try:
+        return path and os.path.exists(path)
+    except Exception:
+        return False
+
+def resolve_python_invocation(script_path: str):
+    """Return (exe, args_list) choosing a robust Python runtime.
+
+    Prefers 'py -3' on Windows, then sys.executable if it exists,
+    then 'python3' or 'python' from PATH.
+    args_list always includes the executable/program name as argv[0].
+    """
+    # 1) Prefer 'py' launcher if present
+    py_launcher = shutil.which('py')
+    if py_launcher:
+        return (py_launcher, [py_launcher, '-3', script_path])
+
+    # 2) sys.executable if it exists
+    if _file_exists(sys.executable):
+        return (sys.executable, [sys.executable, script_path])
+
+    # 3) PATH fallbacks
+    for name in ('python3', 'python'):
+        found = shutil.which(name)
+        if found:
+            return (found, [found, script_path])
+
+    # 4) Last resort: try direct call, will likely fail
+    return ('python', ['python', script_path])
+
+def quote_arg(arg: str) -> str:
+    if not arg:
+        return '""'
+    if ' ' in arg or '"' in arg or '\\' in arg:
+        # naive safe quoting for Task Scheduler command line
+        return '"' + arg.replace('"', '\\"') + '"'
+    return arg
 
 def fetch_ui():
     global temp_html_path
@@ -48,7 +88,15 @@ def update_self():
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(r.text)
         print("[INFO] Backend updated, restarting...")
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        exe, base_args = resolve_python_invocation(script_path)
+        # preserve any original CLI args beyond the script path
+        extra_args = sys.argv[1:]
+        argv = base_args + extra_args
+        if os.name == 'nt' and os.path.splitext(exe)[1].lower() == '.exe':
+            os.execv(exe, argv)
+        else:
+            # Use PATH lookup for non-absolute executables like 'py' or 'python'
+            os.execvp(exe, argv)
     except Exception as e:
         return f"Update failed: {e}"
 
@@ -108,7 +156,18 @@ def update():
 
 @app.route("/restart")
 def restart():
-    threading.Thread(target=lambda: (time.sleep(1), os.execv(sys.executable, [sys.executable] + sys.argv))).start()
+    def _restart():
+        time.sleep(1)
+        exe, base_args = resolve_python_invocation(os.path.realpath(sys.argv[0]))
+        argv = base_args + sys.argv[1:]
+        try:
+            if os.name == 'nt' and os.path.splitext(exe)[1].lower() == '.exe':
+                os.execv(exe, argv)
+            else:
+                os.execvp(exe, argv)
+        except Exception as e:
+            print(f"[ERROR] Restart failed: {e}")
+    threading.Thread(target=_restart).start()
     return jsonify({"status": "Restarting server..."})
 
 def install_startup():
@@ -117,13 +176,13 @@ def install_startup():
     Attempts to create a Windows Scheduled Task with RunLevel=Highest.
     If elevation is declined, falls back to a Startup folder .bat.
     """
-    python_executable = sys.executable
     script_path = os.path.realpath(sys.argv[0])
     task_name = "Lantroller"
 
-    # Prepare elevated call to schtasks
-    run_cmd = f'"{python_executable}" "{script_path}"'
-    schtasks_args = f'/Create /TN "{task_name}" /TR "{run_cmd}" /SC ONLOGON /RL HIGHEST /F'
+    # Prepare elevated call to schtasks with robust Python invocation
+    exe, base_args = resolve_python_invocation(script_path)
+    cmd_line = ' '.join(quote_arg(a) for a in base_args)
+    schtasks_args = f'/Create /TN {quote_arg(task_name)} /TR {quote_arg(cmd_line)} /SC ONLOGON /RL HIGHEST /F'
 
     try:
         # Trigger UAC prompt to run schtasks elevated
@@ -149,9 +208,12 @@ def install_startup():
     startup_dir = os.path.join(os.getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
     os.makedirs(startup_dir, exist_ok=True)
     target_path = os.path.join(startup_dir, os.path.basename(sys.argv[0]).replace(".py", ".bat"))
+    exe, base_args = resolve_python_invocation(script_path)
+    bat_line = ' '.join(quote_arg(a) for a in base_args)
     if not os.path.exists(target_path):
         with open(target_path, "w", encoding="utf-8") as f:
-            f.write(f"@echo off\nstart \"\" \"{python_executable}\" \"{script_path}\"\n")
+            f.write("@echo off\n")
+            f.write(f"start \"\" {bat_line}\n")
         print(f"[INFO] Installed non-elevated startup launcher: {target_path}")
     else:
         print("[INFO] Non-elevated startup launcher already present")
