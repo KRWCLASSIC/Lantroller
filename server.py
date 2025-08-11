@@ -16,6 +16,7 @@ import ctypes
 import shutil
 from flask import Flask, send_file, request, jsonify, Response, stream_with_context
 import socket
+import locale
 
 try:
     from zeroconf import Zeroconf, ServiceInfo
@@ -144,18 +145,30 @@ def exec_stream():
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                bufsize=1,
-                universal_newlines=True,
             )
-            for line in iter(process.stdout.readline, ''):
-                yield line
-            process.stdout.close()
+            preferred = 'utf-8'
+            try:
+                preferred = locale.getpreferredencoding(False) or 'utf-8'
+            except Exception:
+                preferred = 'utf-8'
+            for chunk in iter(lambda: process.stdout.read(4096), b''):
+                try:
+                    text = chunk.decode(preferred, errors='replace')
+                except Exception:
+                    text = chunk.decode('utf-8', errors='replace')
+                yield text
+            if process.stdout:
+                process.stdout.close()
             return_code = process.wait()
             yield f"\n[Process exited with code {return_code}]\n"
         except Exception as e:
             yield f"ERROR: {str(e)}\n"
 
     return Response(stream_with_context(generate()), mimetype="text/plain")
+
+@app.get("/health")
+def health():
+    return jsonify({"ok": True})
 
 @app.route("/refetch-ui")
 def refetch_ui():

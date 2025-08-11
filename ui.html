@@ -13,7 +13,10 @@ body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI,
 .brand { display:flex; align-items:center; gap:12px; }
 .brand .logo { width:36px; height:36px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), #a78bfa); display:grid; place-items:center; font-weight: 800; }
 .brand h1 { font-size: 20px; margin:0; letter-spacing: 0.3px; }
-.header .status { font-size: 12px; color: var(--muted); }
+.header .status { font-size: 12px; color: var(--muted); display:flex; align-items:center; gap:8px; }
+.dot { width:10px; height:10px; border-radius:50%; background:#475569; box-shadow: 0 0 0 2px rgba(0,0,0,0.2) inset; }
+.dot.online { background:#22c55e; }
+.dot.offline { background:#ef4444; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
 .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .card { background: linear-gradient(180deg, var(--card), var(--panel)); border:1px solid var(--border); border-radius:12px; padding:14px; }
@@ -89,7 +92,7 @@ async function execLive() {
       return;
     }
     const reader = res.body.getReader();
-    const decoder = new TextDecoder();
+    const decoder = new TextDecoder('utf-8');
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -113,6 +116,35 @@ function quickFill(example) {
   input.value = example;
   input.focus();
 }
+
+async function pollHealth() {
+  try {
+    const res = await fetch('/health', { cache: 'no-store' });
+    const ok = res.ok;
+    const dot = document.getElementById('statusDot');
+    const label = document.getElementById('statusText');
+    if (ok) {
+      dot.classList.add('online');
+      dot.classList.remove('offline');
+      label.textContent = 'Online';
+    } else {
+      dot.classList.add('offline');
+      dot.classList.remove('online');
+      label.textContent = 'Offline';
+    }
+  } catch {
+    const dot = document.getElementById('statusDot');
+    const label = document.getElementById('statusText');
+    dot.classList.add('offline');
+    dot.classList.remove('online');
+    label.textContent = 'Offline';
+  }
+}
+
+window.addEventListener('load', () => {
+  pollHealth();
+  setInterval(pollHealth, 5000);
+});
 </script>
 </head>
 <body>
@@ -125,7 +157,7 @@ function quickFill(example) {
         <div class="badge"><span>Local Host</span></div>
       </div>
     </div>
-    <div class="status">Online</div>
+    <div class="status"><span id="statusDot" class="dot offline"></span><span id="statusText">Offline</span></div>
   </div>
 
   <div class="panel mb-14">
@@ -160,7 +192,7 @@ function quickFill(example) {
   <div class="panel">
     <div class="row mb-10">
       <div class="badge">Live Command Execution</div>
-      <div class="badge">Try <span class="kbd">ipconfig</span>, <span class="kbd">whoami</span>, <span class="kbd">ping 8.8.8.8 -n 3</span></div>
+      <div class="badge">Try <span class="kbd" onclick="quickFill('ipconfig')">ipconfig</span>, <span class="kbd" onclick="quickFill('whoami')">whoami</span>, <span class="kbd" onclick="quickFill('ping 8.8.8.8 -n 3')">ping 8.8.8.8 -n 3</span></div>
     </div>
     <div class="input mb-10">
       <input id="cmd" type="text" placeholder="Enter a command to run, e.g. ipconfig" onkeydown="if(event.key==='Enter') execLive()">
