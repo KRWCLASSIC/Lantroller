@@ -7,7 +7,8 @@ import requests
 import subprocess
 import threading
 import time
-from flask import Flask, send_file, request, jsonify
+import ctypes
+from flask import Flask, send_file, request, jsonify, Response, stream_with_context
 import socket
 
 try:
@@ -68,6 +69,33 @@ def actions():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.post("/exec")
+def exec_stream():
+    data = request.get_json(silent=True) or {}
+    cmd = data.get("cmd")
+    if not cmd:
+        return jsonify({"error": "No command provided"}), 400
+
+    def generate():
+        try:
+            process = subprocess.Popen(
+                cmd,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=1,
+                universal_newlines=True,
+            )
+            for line in iter(process.stdout.readline, ''):
+                yield line
+            process.stdout.close()
+            return_code = process.wait()
+            yield f"\n[Process exited with code {return_code}]\n"
+        except Exception as e:
+            yield f"ERROR: {str(e)}\n"
+
+    return Response(stream_with_context(generate()), mimetype="text/plain")
+
 @app.route("/refetch-ui")
 def refetch_ui():
     fetch_ui()
@@ -84,14 +112,49 @@ def restart():
     return jsonify({"status": "Restarting server..."})
 
 def install_startup():
+    """Install app to run on logon with highest privileges via Scheduled Task.
+
+    Attempts to create a Windows Scheduled Task with RunLevel=Highest.
+    If elevation is declined, falls back to a Startup folder .bat.
+    """
+    python_executable = sys.executable
+    script_path = os.path.realpath(sys.argv[0])
+    task_name = "Lantroller"
+
+    # Prepare elevated call to schtasks
+    run_cmd = f'"{python_executable}" "{script_path}"'
+    schtasks_args = f'/Create /TN "{task_name}" /TR "{run_cmd}" /SC ONLOGON /RL HIGHEST /F'
+
+    try:
+        # Trigger UAC prompt to run schtasks elevated
+        # ShellExecuteW returns >32 on success
+        rc = ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            "schtasks.exe",
+            schtasks_args,
+            None,
+            1,
+        )
+        if rc <= 32:
+            raise RuntimeError(f"ShellExecuteW failed with code {rc}")
+        print(f"[INFO] Requested creation of elevated scheduled task '{task_name}'.")
+        print("[INFO] If you accepted the UAC prompt, the task will run with highest privileges on logon.")
+        return
+    except Exception as e:
+        print(f"[WARN] Could not create elevated scheduled task (maybe UAC declined): {e}")
+        print("[WARN] Falling back to per-user Startup shortcut (not elevated).")
+
+    # Fallback: non-elevated Startup folder .bat launcher
     startup_dir = os.path.join(os.getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
-    target_path = os.path.join(startup_dir, os.path.basename(sys.argv[0]).replace(".py", ".pyw"))
+    os.makedirs(startup_dir, exist_ok=True)
+    target_path = os.path.join(startup_dir, os.path.basename(sys.argv[0]).replace(".py", ".bat"))
     if not os.path.exists(target_path):
         with open(target_path, "w", encoding="utf-8") as f:
-            f.write(f'@echo off\nstart "" "{sys.executable}" "{os.path.realpath(sys.argv[0])}"\n')
-        print(f"[INFO] Installed to startup: {target_path}")
+            f.write(f"@echo off\nstart \"\" \"{python_executable}\" \"{script_path}\"\n")
+        print(f"[INFO] Installed non-elevated startup launcher: {target_path}")
     else:
-        print("[INFO] Already installed in startup")
+        print("[INFO] Non-elevated startup launcher already present")
 
 def register_mdns():
     zeroconf = Zeroconf()

@@ -5,31 +5,175 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PC Control Panel</title>
 <style>
-body { font-family: sans-serif; background: #f5f5f5; text-align: center; margin: 0; padding: 20px; }
-button { padding: 12px 20px; margin: 8px; font-size: 16px; border: none; border-radius: 6px; cursor: pointer; background: #333; color: white; }
-button:hover { background: #555; }
-.container { max-width: 500px; margin: auto; }
+:root { --bg:#0f1220; --panel:#171a2b; --accent:#6c8cff; --accent-2:#22c55e; --text:#e5e7eb; --muted:#9ca3af; --danger:#ef4444; --warning:#f59e0b; --card:#0b0e1a; --border:#2a2f45; }
+* { box-sizing: border-box; }
+body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background: linear-gradient(180deg, #0b0e1a 0%, #0f1220 100%); color: var(--text); }
+.container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+.header { display:flex; align-items:center; justify-content: space-between; margin-bottom: 16px; }
+.brand { display:flex; align-items:center; gap:12px; }
+.brand .logo { width:36px; height:36px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), #a78bfa); display:grid; place-items:center; font-weight: 800; }
+.brand h1 { font-size: 20px; margin:0; letter-spacing: 0.3px; }
+.header .status { font-size: 12px; color: var(--muted); }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+.grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.card { background: linear-gradient(180deg, var(--card), var(--panel)); border:1px solid var(--border); border-radius:12px; padding:14px; }
+.card h3 { margin:0 0 8px 0; font-size:14px; color: var(--muted); font-weight:600; letter-spacing: .4px; }
+.buttons { display:flex; flex-wrap:wrap; gap:8px; }
+button { appearance:none; border:1px solid var(--border); background: #1c2140; color: var(--text); padding:10px 12px; border-radius:8px; font-size:14px; cursor:pointer; transition: .15s ease; }
+button:hover { transform: translateY(-1px); border-color: var(--accent); box-shadow: 0 6px 14px rgba(108,140,255,.2); }
+button.primary { background: linear-gradient(135deg, var(--accent), #8b5cf6); border-color: transparent; }
+button.success { background: linear-gradient(135deg, var(--accent-2), #16a34a); border-color: transparent; }
+button.warning { background: linear-gradient(135deg, var(--warning), #f97316); border-color: transparent; }
+button.danger { background: linear-gradient(135deg, var(--danger), #b91c1c); border-color: transparent; }
+.row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+.input { display:flex; gap:8px; width:100%; }
+.input input { flex:1; min-width: 140px; background:#0f132d; color: var(--text); border:1px solid var(--border); border-radius:8px; padding:10px 12px; outline:none; }
+.terminal { height: 280px; overflow:auto; background:#0a0d1c; border:1px solid var(--border); border-radius: 10px; padding:12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; white-space: pre-wrap; }
+.badge { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); padding:6px 8px; border-radius:999px; color: var(--muted); }
+.kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono"; background:#11152d; border:1px solid var(--border); padding:2px 6px; border-radius:6px; color: var(--text); }
+.footer { margin-top: 18px; display:flex; gap:8px; flex-wrap:wrap; justify-content: space-between; color: var(--muted); font-size: 12px; }
+.link { color: var(--text); text-decoration: underline dotted; cursor: pointer; }
+.hidden { display:none; }
+.muted { color: var(--muted); }
+.mb-14 { margin-bottom:14px; }
+.mb-10 { margin-bottom:10px; }
 </style>
 <script>
 async function run(cmd) {
-    const res = await fetch(`/actions?cmd=${encodeURIComponent(cmd)}`);
-    alert(await res.text());
+  const res = await fetch(`/actions?cmd=${encodeURIComponent(cmd)}`);
+  const text = await res.text();
+  toast(text);
 }
 async function doAction(url) {
-    const res = await fetch(url);
-    alert(await res.text());
+  const res = await fetch(url);
+  const text = await res.text();
+  toast(text);
+}
+function toast(msg) {
+  const el = document.createElement('div');
+  el.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg);
+  el.style.position = 'fixed';
+  el.style.bottom = '20px';
+  el.style.left = '50%';
+  el.style.transform = 'translateX(-50%)';
+  el.style.background = '#11152d';
+  el.style.border = '1px solid #2a2f45';
+  el.style.color = '#e5e7eb';
+  el.style.padding = '10px 12px';
+  el.style.borderRadius = '10px';
+  el.style.zIndex = 9999;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2000);
+}
+async function execLive() {
+  const input = document.getElementById('cmd');
+  const output = document.getElementById('output');
+  const runBtn = document.getElementById('runBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const cmd = input.value.trim();
+  if (!cmd) { input.focus(); return; }
+  output.textContent = '';
+  runBtn.disabled = true;
+  stopBtn.disabled = false;
+  let controller = new AbortController();
+  window._execController = controller;
+  try {
+    const res = await fetch('/exec', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cmd }),
+      signal: controller.signal
+    });
+    if (!res.body) {
+      output.textContent = await res.text();
+      return;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      output.textContent += decoder.decode(value, { stream: true });
+      output.scrollTop = output.scrollHeight;
+    }
+  } catch (e) {
+    output.textContent += `\n[Error] ${e}\n`;
+  } finally {
+    runBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
+}
+function stopExec() {
+  if (window._execController) {
+    window._execController.abort();
+  }
+}
+function quickFill(example) {
+  const input = document.getElementById('cmd');
+  input.value = example;
+  input.focus();
 }
 </script>
 </head>
 <body>
 <div class="container">
-    <h1>PC Control</h1>
-    <button onclick="run('notepad')">Open Notepad</button>
-    <button onclick="run('shutdown /s /t 0')">Shutdown</button>
-    <button onclick="run('shutdown /r /t 0')">Restart PC</button>
-    <button onclick="doAction('/refetch-ui')">Refetch UI</button>
-    <button onclick="doAction('/update')">Update Backend</button>
-    <button onclick="doAction('/restart')">Restart Server</button>
+  <div class="header">
+    <div class="brand">
+      <div class="logo">PC</div>
+      <div>
+        <h1>PC Control</h1>
+        <div class="badge"><span>Local Host</span></div>
+      </div>
+    </div>
+    <div class="status">Online</div>
+  </div>
+
+  <div class="panel mb-14">
+    <div class="grid">
+      <div class="card">
+        <h3>Common</h3>
+        <div class="buttons">
+          <button onclick="run('notepad')" class="primary">Open Notepad</button>
+          <button onclick="run('explorer')">Open Explorer</button>
+          <button onclick="run('calc')">Open Calculator</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Power</h3>
+        <div class="buttons">
+          <button class="danger" onclick="run('shutdown /s /t 0')">Shutdown</button>
+          <button class="warning" onclick="run('shutdown /r /t 0')">Restart</button>
+          <button onclick="run('rundll32.exe user32.dll,LockWorkStation')">Lock</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Maintenance</h3>
+        <div class="buttons">
+          <button onclick="doAction('/refetch-ui')">Refetch UI</button>
+          <button onclick="doAction('/update')">Update Backend</button>
+          <button onclick="doAction('/restart')">Restart Server</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row mb-10">
+      <div class="badge">Live Command Execution</div>
+      <div class="badge">Try <span class="kbd">ipconfig</span>, <span class="kbd">whoami</span>, <span class="kbd">ping 8.8.8.8 -n 3</span></div>
+    </div>
+    <div class="input mb-10">
+      <input id="cmd" type="text" placeholder="Enter a command to run, e.g. ipconfig" onkeydown="if(event.key==='Enter') execLive()">
+      <button id="runBtn" class="success" onclick="execLive()">Run</button>
+      <button id="stopBtn" onclick="stopExec()" disabled>Stop</button>
+    </div>
+    <div class="terminal" id="output"></div>
+  </div>
+
+  <div class="footer">
+    <div>Built with Flask</div>
+    <div class="muted">Be careful: commands run with server permissions.</div>
+  </div>
 </div>
 </body>
 </html>
