@@ -42,6 +42,10 @@ button.danger { background: linear-gradient(135deg, var(--danger), #b91c1c); bor
 .mb-10 { margin-bottom:10px; }
 </style>
 <script>
+// Versions (edit here)
+const UI_VERSION = '0.1.0';
+const BACKEND_VERSION = '0.1.0';
+
 async function run(cmd) {
   const res = await fetch(`/actions?cmd=${encodeURIComponent(cmd)}`);
   const text = await res.text();
@@ -142,6 +146,8 @@ async function pollHealth() {
 }
 
 window.addEventListener('load', () => {
+  const verEl = document.getElementById('versions');
+  if (verEl) verEl.textContent = `UI ${UI_VERSION} · Backend ${BACKEND_VERSION}`;
   pollHealth();
   setInterval(pollHealth, 5000);
 });
@@ -157,7 +163,12 @@ window.addEventListener('load', () => {
         <div class="badge"><span>Local Host</span></div>
       </div>
     </div>
-    <div class="status"><span id="statusDot" class="dot offline"></span><span id="statusText">Offline</span></div>
+    <div class="status">
+      <span id="statusDot" class="dot offline"></span>
+      <span id="statusText">Offline</span>
+      <span class="muted">|</span>
+      <span id="versions" class="muted"></span>
+    </div>
   </div>
 
   <div class="panel mb-14">
