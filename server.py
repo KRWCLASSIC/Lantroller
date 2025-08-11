@@ -312,7 +312,7 @@ def install_startup():
 
         # Try to start the task immediately so it activates without reboot/logon
         try:
-            time.sleep(0.5)
+            time.sleep(3)
             schtasks_run_args = f'/Run /TN {quote_arg(task_name)}'
             rc_run = ctypes.windll.shell32.ShellExecuteW(
                 None,
