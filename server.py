@@ -309,6 +309,25 @@ def install_startup():
             raise RuntimeError(f"ShellExecuteW failed with code {rc}")
         logger.info(f"Requested creation of elevated scheduled task '{task_name}'.")
         logger.info("If you accepted the UAC prompt, the task will run with highest privileges on logon.")
+
+        # Try to start the task immediately so it activates without reboot/logon
+        try:
+            time.sleep(0.5)
+            schtasks_run_args = f'/Run /TN {quote_arg(task_name)}'
+            rc_run = ctypes.windll.shell32.ShellExecuteW(
+                None,
+                "runas",
+                "schtasks.exe",
+                schtasks_run_args,
+                None,
+                1,
+            )
+            if rc_run <= 32:
+                logger.warning(f"Could not start scheduled task now (code {rc_run}). It will run on next logon.")
+            else:
+                logger.info("Scheduled task started successfully.")
+        except Exception as e:
+            logger.warning(f"Failed to start scheduled task immediately: {e}")
         return
     except Exception as e:
         logger.warning(f"Could not create elevated scheduled task (maybe UAC declined): {e}")
