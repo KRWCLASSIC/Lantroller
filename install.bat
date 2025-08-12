@@ -5,13 +5,27 @@ set REQUIREMENTS_URL=https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/ref
 set SERVER_FILE=%INSTALL_DIR%\server.py
 set REQUIREMENTS_FILE=%INSTALL_DIR%\requirements.txt
 
+if "%~1"=="--continue" goto CONTINUE
+
 echo Creating installation directory %INSTALL_DIR%...
 mkdir "%INSTALL_DIR%" 2>nul
 
 echo Checking for Python...
 where python >nul 2>nul
 if %errorlevel% neq 0 (
-    echo Python not found in PATH. Attempting to install Python 3.11 via Winget...
+    echo Python not found in PATH. Checking for Winget...
+    where winget >nul 2>nul
+    if %errorlevel% neq 0 (
+        echo Winget not found. Installing Winget (App Installer)...
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "irm asheroto.com/winget | iex"
+        if %errorlevel% neq 0 (
+            echo Failed to install Winget automatically. Please install Winget (App Installer) from Microsoft Store.
+            pause
+            exit /b 1
+        )
+        echo Winget installed.
+    )
+    echo Installing Python 3.11 via Winget...
     winget.exe install --id "Python.Python.3.11" --exact --source winget --accept-source-agreements --disable-interactivity --silent --accept-package-agreements --force
     if %errorlevel% neq 0 (
         echo Failed to install Python via Winget. Please install Python 3.x and add it to your PATH manually.
@@ -20,7 +34,15 @@ if %errorlevel% neq 0 (
         exit /b 1
     )
     echo Python 3.11 installed successfully.
+    echo Restarting installer to refresh PATH...
+    start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "cmd /c \"\"%~f0\" --continue\""
+    exit /b 0
 )
+
+:CONTINUE
+
+rem Ensure installation directory exists in the resume path as well
+mkdir "%INSTALL_DIR%" 2>nul
 
 echo Fetching latest requirements.txt...
 powershell -Command "Invoke-WebRequest -Uri '%REQUIREMENTS_URL%' -OutFile '%REQUIREMENTS_FILE%' -ErrorAction Stop"
