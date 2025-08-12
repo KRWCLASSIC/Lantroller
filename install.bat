@@ -16,10 +16,10 @@ if %errorlevel% neq 0 (
     echo Python not found in PATH. Checking for Winget...
     where winget >nul 2>nul
     if %errorlevel% neq 0 (
-        echo Winget not found. Installing Winget (App Installer)...
+        echo Winget not found. Installing Winget ^(App Installer^)
         powershell -NoProfile -ExecutionPolicy Bypass -Command "irm asheroto.com/winget | iex"
         if %errorlevel% neq 0 (
-            echo Failed to install Winget automatically. Please install Winget (App Installer) from Microsoft Store.
+            echo Failed to install Winget automatically. Please install Winget ^(App Installer^) from Microsoft Store.
             pause
             exit /b 1
         )
