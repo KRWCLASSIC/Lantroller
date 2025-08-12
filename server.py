@@ -1,24 +1,19 @@
-import os
-import sys
-import tempfile
-import random
-import string
-try:
-    import requests
-except ImportError:
-    # Ensure 'requests' is available in the current interpreter environment
-    subprocess.run([sys.executable, "-m", "pip", "install", "requests"])  # best-effort
-    import requests
+from flask import Flask, send_file, request, jsonify, Response, stream_with_context
+from logging.handlers import RotatingFileHandler
 import subprocess
 import threading
-import time
+import tempfile
+import requests
+import logging
+import random
+import string
 import ctypes
 import shutil
-from flask import Flask, send_file, request, jsonify, Response, stream_with_context
 import socket
 import locale
-import logging
-from logging.handlers import RotatingFileHandler
+import time
+import sys
+import os
 
 try:
     from zeroconf import Zeroconf, ServiceInfo
