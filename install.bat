@@ -6,6 +6,7 @@ set REQUIREMENTS_URL=https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/ref
 set SERVER_FILE=%INSTALL_DIR%\server.py
 set REQUIREMENTS_FILE=%INSTALL_DIR%\requirements.txt
 set WINGET_EXE=
+if "%~1"=="--resume" goto RESUME
 
 echo Creating installation directory %INSTALL_DIR%...
 mkdir "%INSTALL_DIR%" 2>nul
@@ -33,9 +34,14 @@ if %errorlevel% neq 0 (
     )
     echo Installing Python 3.11 via Winget...
     "!WINGET_EXE!" install --id "Python.Python.3.11" --exact --source winget --accept-source-agreements --disable-interactivity --silent --accept-package-agreements --force
+    goto RESUME
+
+:RESUME
     where python >nul 2>nul
     if %errorlevel% neq 0 (
-        exit /b 1
+        echo Restarting installer to refresh PATH...
+        start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "cmd /c \"\"%~f0\" --resume\""
+        exit /b 0
     )
     echo Python 3.11 installed and detected on PATH.
 )
