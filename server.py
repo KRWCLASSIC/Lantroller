@@ -1,4 +1,4 @@
-from flask import Flask, send_file, request, jsonify, Response, stream_with_context
+from flask import Flask, send_file, request, jsonify, Response, stream_with_context, redirect
 from logging.handlers import RotatingFileHandler
 import subprocess
 import threading
@@ -169,59 +169,6 @@ def update_self():
         logger.error(f"Update failed: {e}")
         return f"Update failed: {e}"
 
-# ===== Input simulation (Windows) =====
-VK_MAP = {
-    # Letters
-    **{chr(c): c for c in range(0x41, 0x5B)},  # 'A'..'Z' -> 0x41..0x5A
-    # Digits
-    **{str(d): 0x30 + d for d in range(0, 10)},
-    # Common keys
-    'ENTER': 0x0D,
-    'ESC': 0x1B,
-    'SPACE': 0x20,
-    'TAB': 0x09,
-    'BACKSPACE': 0x08,
-    'LEFT': 0x25,
-    'UP': 0x26,
-    'RIGHT': 0x27,
-    'DOWN': 0x28,
-    'SHIFT': 0x10,
-    'CTRL': 0x11,
-    'ALT': 0x12,
-    'WIN': 0x5B,  # Left Windows key
-    'MINUS': 0xBD,
-    'EQUAL': 0xBB,
-    'LBRACKET': 0xDB,
-    'RBRACKET': 0xDD,
-    'BACKSLASH': 0xDC,
-    'SEMICOLON': 0xBA,
-    'QUOTE': 0xDE,
-    'COMMA': 0xBC,
-    'PERIOD': 0xBE,
-    'SLASH': 0xBF,
-}
-
-def _press_key_for_duration_windows(vk_code: int, duration_ms: int):
-    try:
-        user32 = ctypes.windll.user32
-        KEYEVENTF_KEYUP = 0x0002
-        user32.keybd_event(vk_code, 0, 0, 0)
-        time.sleep(max(0, duration_ms or 0) / 1000.0)
-        user32.keybd_event(vk_code, 0, KEYEVENTF_KEYUP, 0)
-    except Exception as e:
-        logger.error(f"keybd_event failed for vk={vk_code}: {e}")
-
-def _move_mouse_by_windows(dx: int, dy: int):
-    try:
-        class POINT(ctypes.Structure):
-            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
-        user32 = ctypes.windll.user32
-        pt = POINT()
-        user32.GetCursorPos(ctypes.byref(pt))
-        user32.SetCursorPos(pt.x + int(dx), pt.y + int(dy))
-    except Exception as e:
-        logger.error(f"SetCursorPos failed: {e}")
-
 def _kill_processes_windows(process_names):
     results = {}
     creation = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
@@ -284,18 +231,22 @@ def kill_named_process_groups(group: str):
         return {"killed": results}
     return {"error": f"Unknown group '{group}'"}, 400
 
-@app.route("/ui")
-def serve_ui():
-    # Prefer local ui.html next to this script if available
+@app.route("/localUI")
+def local_ui():
     try:
         local_ui = os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), "ui.html")
         if os.path.exists(local_ui):
             return send_file(local_ui)
     except Exception:
         pass
+    return "Local UI not available", 404
+
+@app.route("/ui")
+def serve_ui():
+    # Prefer fetched UI from temp path; if missing, redirect to dedicated local endpoint
     if temp_html_path and os.path.exists(temp_html_path):
         return send_file(temp_html_path)
-    return "UI not fetched", 500
+    return redirect("/localUI")
 
 @app.route("/actions")
 def actions():
@@ -365,32 +316,6 @@ def get_logs():
         return Response(text, mimetype="text/plain")
     except Exception as e:
         return Response(f"Error reading logs: {e}\n", mimetype="text/plain", status=500)
-
-@app.post("/input/key")
-def input_key():
-    data = request.get_json(silent=True) or {}
-    key = (data.get("key") or "").upper()
-    duration_ms = int(data.get("durationMs") or 0)
-    if not key:
-        return jsonify({"error": "No key provided"}), 400
-    if os.name != 'nt':
-        return jsonify({"error": "Key input only implemented for Windows"}), 400
-    vk = VK_MAP.get(key)
-    if vk is None:
-        return jsonify({"error": f"Unsupported key '{key}'"}), 400
-    logger.info(f"Simulate key {key} for {duration_ms}ms")
-    threading.Thread(target=_press_key_for_duration_windows, args=(vk, duration_ms), daemon=True).start()
-    return jsonify({"status": "ok", "key": key, "durationMs": duration_ms})
-
-@app.post("/input/mouse/move")
-def input_mouse_move():
-    data = request.get_json(silent=True) or {}
-    dx = int(data.get("dx") or 0)
-    dy = int(data.get("dy") or 0)
-    if os.name != 'nt':
-        return jsonify({"error": "Mouse move only implemented for Windows"}), 400
-    threading.Thread(target=_move_mouse_by_windows, args=(dx, dy), daemon=True).start()
-    return jsonify({"status": "ok", "dx": dx, "dy": dy})
 
 @app.route("/kill/discord")
 def kill_discord():
