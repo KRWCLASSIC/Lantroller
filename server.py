@@ -118,22 +118,19 @@ def launch_windowless_with_python_and_exit(extra_args=None):
     if extra_args is None:
         extra_args = []
     script_path = os.path.realpath(sys.argv[0])
-    if os.name == 'nt':
-        try:
-            pythonw_exe, argv = resolve_pythonw_invocation(script_path)
-            cmd = argv + list(extra_args)
-            creation = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-            subprocess.Popen(cmd, creationflags=creation, close_fds=True)
-        except Exception:
-            # Fallback to PATH python but request no window
-            python_cmd = shutil.which('python') or 'python'
-            cmd = [python_cmd, script_path] + list(extra_args)
-            creation = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-            subprocess.Popen(cmd, creationflags=creation, close_fds=True)
-        finally:
-            os._exit(0)
-    else:
-        launch_with_path_python_and_exit(extra_args)
+    try:
+        pythonw_exe, argv = resolve_pythonw_invocation(script_path)
+        cmd = argv + list(extra_args)
+        creation = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        subprocess.Popen(cmd, creationflags=creation, close_fds=True)
+    except Exception:
+        # Fallback to PATH python but request no window
+        python_cmd = shutil.which('python') or 'python'
+        cmd = [python_cmd, script_path] + list(extra_args)
+        creation = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        subprocess.Popen(cmd, creationflags=creation, close_fds=True)
+    finally:
+        os._exit(0)
 
 def fetch_ui():
     global temp_html_path
@@ -316,6 +313,107 @@ def get_logs():
         return Response(text, mimetype="text/plain")
     except Exception as e:
         return Response(f"Error reading logs: {e}\n", mimetype="text/plain", status=500)
+
+# ===== Input simulation (Windows) =====
+VK_MAP = {
+    # Letters
+    **{chr(c): c for c in range(0x41, 0x5B)},  # 'A'..'Z' -> 0x41..0x5A
+    # Digits
+    **{str(d): 0x30 + d for d in range(0, 10)},
+    # Common keys
+    'ENTER': 0x0D,
+    'ESC': 0x1B,
+    'SPACE': 0x20,
+    'TAB': 0x09,
+    'BACKSPACE': 0x08,
+    'LEFT': 0x25,
+    'UP': 0x26,
+    'RIGHT': 0x27,
+    'DOWN': 0x28,
+    'SHIFT': 0x10,
+    'CTRL': 0x11,
+    'ALT': 0x12,
+}
+
+def _key_event_windows(vk_code: int, is_down: bool):
+    try:
+        user32 = ctypes.windll.user32
+        KEYEVENTF_KEYUP = 0x0002
+        flags = 0 if is_down else KEYEVENTF_KEYUP
+        user32.keybd_event(vk_code, 0, flags, 0)
+    except Exception as e:
+        logger.error(f"keybd_event failed vk={vk_code} down={is_down}: {e}")
+
+def _mouse_move_by_windows(dx: int, dy: int):
+    try:
+        class POINT(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+        user32 = ctypes.windll.user32
+        pt = POINT()
+        user32.GetCursorPos(ctypes.byref(pt))
+        user32.SetCursorPos(pt.x + int(dx), pt.y + int(dy))
+    except Exception as e:
+        logger.error(f"SetCursorPos failed: {e}")
+
+def _mouse_button_windows(button: str, is_down: bool):
+    try:
+        user32 = ctypes.windll.user32
+        MOUSEEVENTF_LEFTDOWN = 0x0002
+        MOUSEEVENTF_LEFTUP = 0x0004
+        MOUSEEVENTF_RIGHTDOWN = 0x0008
+        MOUSEEVENTF_RIGHTUP = 0x0010
+        MOUSEEVENTF_MIDDLEDOWN = 0x0020
+        MOUSEEVENTF_MIDDLEUP = 0x0040
+        if button == 'left':
+            flag = MOUSEEVENTF_LEFTDOWN if is_down else MOUSEEVENTF_LEFTUP
+        elif button == 'right':
+            flag = MOUSEEVENTF_RIGHTDOWN if is_down else MOUSEEVENTF_RIGHTUP
+        elif button == 'middle':
+            flag = MOUSEEVENTF_MIDDLEDOWN if is_down else MOUSEEVENTF_MIDDLEUP
+        else:
+            raise ValueError(f"Unsupported mouse button '{button}'")
+        user32.mouse_event(flag, 0, 0, 0, 0)
+    except Exception as e:
+        logger.error(f"mouse_event failed button={button} down={is_down}: {e}")
+
+@app.post("/input/key")
+def input_key():
+    data = request.get_json(silent=True) or {}
+    key = (data.get("key") or "").upper()
+    event_type = (data.get("event") or "").lower()  # 'down' or 'up'
+    if not key or event_type not in ("down", "up"):
+        return jsonify({"error": "Provide 'key' and event in {'down','up'}"}), 400
+    if os.name != 'nt':
+        return jsonify({"error": "Key input only implemented for Windows"}), 400
+    vk = VK_MAP.get(key)
+    if vk is None:
+        return jsonify({"error": f"Unsupported key '{key}'"}), 400
+    is_down = event_type == 'down'
+    threading.Thread(target=_key_event_windows, args=(vk, is_down), daemon=True).start()
+    return jsonify({"status": "ok"})
+
+@app.post("/input/mouse/move")
+def input_mouse_move():
+    data = request.get_json(silent=True) or {}
+    dx = int(data.get("dx") or 0)
+    dy = int(data.get("dy") or 0)
+    if os.name != 'nt':
+        return jsonify({"error": "Mouse move only implemented for Windows"}), 400
+    threading.Thread(target=_mouse_move_by_windows, args=(dx, dy), daemon=True).start()
+    return jsonify({"status": "ok"})
+
+@app.post("/input/mouse/button")
+def input_mouse_button():
+    data = request.get_json(silent=True) or {}
+    button = (data.get("button") or "").lower()  # left/right/middle
+    event_type = (data.get("event") or "").lower()  # down/up
+    if button not in ("left", "right", "middle") or event_type not in ("down", "up"):
+        return jsonify({"error": "Provide 'button' in {'left','right','middle'} and event in {'down','up'}"}), 400
+    if os.name != 'nt':
+        return jsonify({"error": "Mouse button only implemented for Windows"}), 400
+    is_down = event_type == 'down'
+    threading.Thread(target=_mouse_button_windows, args=(button, is_down), daemon=True).start()
+    return jsonify({"status": "ok"})
 
 @app.route("/kill/discord")
 def kill_discord():

@@ -43,6 +43,9 @@ button.danger { background: linear-gradient(135deg, var(--danger), #b91c1c); bor
 .muted { color: var(--muted); }
 .mb-14 { margin-bottom:14px; }
 .mb-10 { margin-bottom:10px; }
+.touchpad-canvas { background:#0a0d1c; border:1px solid var(--border); border-radius:10px; touch-action:none; }
+.touchpad-wrap { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+.col-gap-8 { display:flex; flex-direction:column; gap:8px; }
 @media (max-width: 640px) {
   .container { padding: 16px; }
   .grid { grid-template-columns: 1fr; }
@@ -244,6 +247,118 @@ window.addEventListener('load', () => {
   </div>
 
   <div class="panel mt-12">
+    <div class="row mb-10">
+      <div class="badge">Mini Keyboard</div>
+      <div class="badge muted">Live key down/up</div>
+    </div>
+    <div id="mini-kb" class="mb-10"></div>
+    <div class="row mb-10">
+      <div class="badge">Touchpad</div>
+      <div class="badge muted">Drag to move · Buttons below</div>
+    </div>
+    <div class="touchpad-wrap">
+      <canvas id="touchpad" width="320" height="200" class="touchpad-canvas"></canvas>
+      <div class="col-gap-8">
+        <div class="row">
+          <button id="lmb-down">LMB Down</button>
+          <button id="lmb-up">LMB Up</button>
+        </div>
+        <div class="row">
+          <button id="rmb-down">RMB Down</button>
+          <button id="rmb-up">RMB Up</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // Mini keyboard definition
+  const MINI_ROWS = [
+    ['ESC','1','2','3','4','5','6','7','8','9','0','BACKSPACE'],
+    ['TAB','Q','W','E','R','T','Y','U','I','O','P','ENTER'],
+    ['CTRL','A','S','D','F','G','H','J','K','L','SPACE'],
+    ['SHIFT','Z','X','C','V','B','N','M']
+  ];
+
+  function renderMiniKeyboard(){
+    const wrap = document.getElementById('mini-kb');
+    wrap.innerHTML = '';
+    for (const row of MINI_ROWS){
+      const rowEl = document.createElement('div');
+      rowEl.className = 'row mb-10';
+      for (const key of row){
+        const btn = document.createElement('button');
+        btn.textContent = key.length === 1 ? key : key;
+        btn.onpointerdown = () => sendKey(key, 'down');
+        btn.onpointerup = () => sendKey(key, 'up');
+        btn.onpointerleave = () => sendKey(key, 'up');
+        rowEl.appendChild(btn);
+      }
+      wrap.appendChild(rowEl);
+    }
+  }
+
+  async function sendKey(key, eventType){
+    try {
+      await fetch('/input/key', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ key, event: eventType })
+      });
+    } catch {}
+  }
+
+  // Touchpad
+  (function(){
+    const canvas = document.getElementById('touchpad');
+    const ctx = canvas.getContext('2d');
+    let last = null;
+    const sendEveryMs = 16; // ~60Hz
+    let lastSent = 0;
+
+    function drawBase(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = '#0b0e1a';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.strokeStyle = '#2a2f45';
+      ctx.strokeRect(0.5,0.5,canvas.width-1,canvas.height-1);
+    }
+    drawBase();
+
+    function sendDelta(dx, dy){
+      fetch('/input/mouse/move', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({dx, dy})}).catch(()=>{});
+    }
+
+    function handlePointer(e){
+      const now = performance.now();
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      if (last == null) { last = {x, y}; return; }
+      const dx = Math.round((x - last.x));
+      const dy = Math.round((y - last.y));
+      last = {x, y};
+      if (now - lastSent >= sendEveryMs){
+        lastSent = now;
+        if (dx !== 0 || dy !== 0) sendDelta(dx, dy);
+      }
+    }
+
+    canvas.addEventListener('pointerdown', (e)=>{ canvas.setPointerCapture(e.pointerId); last = null; });
+    canvas.addEventListener('pointermove', (e)=>{ if (e.pressure > 0 || e.buttons) handlePointer(e); });
+    canvas.addEventListener('pointerup', ()=>{ last = null; });
+  })();
+
+  function mouseButton(button, eventType){
+    fetch('/input/mouse/button', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({button, event: eventType})}).catch(()=>{});
+  }
+  document.getElementById('lmb-down').onclick = ()=> mouseButton('left','down');
+  document.getElementById('lmb-up').onclick   = ()=> mouseButton('left','up');
+  document.getElementById('rmb-down').onclick = ()=> mouseButton('right','down');
+  document.getElementById('rmb-up').onclick   = ()=> mouseButton('right','up');
+
+  renderMiniKeyboard();
+  </script>
     <div class="row mb-10">
       <div class="badge">Logs</div>
       <div class="badge muted">Last 500 lines · auto-refresh</div>
