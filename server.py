@@ -24,6 +24,7 @@ except ImportError:
 # ===== CONFIG =====
 PYTHON_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/server.py"
 HTML_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/ui.html"
+BACKEND_VERSION = "v3"
 HOSTNAME = "controlled.local"
 PORT = 5000
 # ==================
@@ -139,10 +140,17 @@ def fetch_ui():
     try:
         r = requests.get(HTML_UPDATE_URL, timeout=5)
         r.raise_for_status()
+        
+        # Read ui.html content from the response
+        ui_html_content = r.text
+
+        # Replace BACKEND_VERSION in ui_html_content
+        ui_html_content = ui_html_content.replace("const BACKEND_VERSION = '';", f"const BACKEND_VERSION = '{BACKEND_VERSION}';")
+
         temp_name = "ui_" + ''.join(random.choices(string.ascii_lowercase + string.digits, k=6)) + ".html"
         temp_html_path = os.path.join(tempfile.gettempdir(), temp_name)
         with open(temp_html_path, "w", encoding="utf-8") as f:
-            f.write(r.text)
+            f.write(ui_html_content)
         logger.info(f"UI fetched to {temp_html_path}")
     except Exception as e:
         logger.error(f"Failed to fetch UI: {e}")
