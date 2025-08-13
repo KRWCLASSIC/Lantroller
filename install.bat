@@ -34,17 +34,22 @@ if %errorlevel% neq 0 (
     )
     echo Installing Python 3.11 via Winget...
     "!WINGET_EXE!" install --id "Python.Python.3.11" --exact --source winget --accept-source-agreements --disable-interactivity --silent --accept-package-agreements --force
-    goto RESUME
+    echo Restarting installer in a new window to refresh PATH...
+    start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "cmd /c \"\"%~f0\" --resume\""
+    exit /b 0
+)
 
 :RESUME
-    where python >nul 2>nul
-    if %errorlevel% neq 0 (
-        echo Restarting installer to refresh PATH...
-        start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "cmd /c \"\"%~f0\" --resume\""
-        exit /b 0
-    )
-    echo Python 3.11 installed and detected on PATH.
+set "PYTHON_EXE="
+call :findRealPython
+if not defined PYTHON_EXE (
+    echo Could not resolve a usable Python interpreter after installation.
+    echo Please sign out/in or reboot, then re-run the installer.
+    pause
+    exit /b 1
 )
+
+echo Using Python: %PYTHON_EXE%
 
 echo Fetching latest requirements.txt...
 powershell -Command "Invoke-WebRequest -Uri '%REQUIREMENTS_URL%' -OutFile '%REQUIREMENTS_FILE%' -ErrorAction Stop"
@@ -53,7 +58,7 @@ if %errorlevel% neq 0 (
 )
 
 echo Installing/updating Python dependencies...
-python -m pip install -r "%REQUIREMENTS_FILE%" --upgrade --no-warn-script-location
+"%PYTHON_EXE%" -m pip install -r "%REQUIREMENTS_FILE%" --upgrade --no-warn-script-location
 if %errorlevel% neq 0 (
     echo Failed to install Python dependencies. Some features may not work.
 )
@@ -67,11 +72,11 @@ if %errorlevel% neq 0 (
 )
 
 echo Installation/Update complete.
-echo You can now run: python server.py
-echo Or to install as a startup service ^(with UAC prompt^): python server.py --install
+echo You can now run: "%PYTHON_EXE%" "%SERVER_FILE%"
+echo Or to install as a startup service ^(with UAC prompt^): "%PYTHON_EXE%" "%SERVER_FILE%" --install
 
 echo Running server.py with --install in a new PowerShell session to refresh PATH...
-start powershell.exe -NoExit -Command "cd '%INSTALL_DIR%'; python server.py --install; Read-Host 'Press Enter to continue...'"
+start powershell.exe -NoExit -Command "cd '%INSTALL_DIR%'; & '%PYTHON_EXE%' 'server.py' --install; Read-Host 'Press Enter to continue...'"
 
 exit /b 0
 
@@ -80,4 +85,17 @@ rem Prefer user-local WindowsApps shim, then PATH
 if exist "%LOCALAPPDATA%\Microsoft\WindowsApps\winget.exe" set "WINGET_EXE=%LOCALAPPDATA%\Microsoft\WindowsApps\winget.exe"
 if not defined WINGET_EXE where winget >nul 2>nul && set "WINGET_EXE=winget"
 if not defined WINGET_EXE if exist "%SystemRoot%\System32\winget.exe" set "WINGET_EXE=%SystemRoot%\System32\winget.exe"
+exit /b 0
+
+:findRealPython
+set "PYTHON_EXE="
+for /f "usebackq delims=" %%E in (`python -c "import sys; print(sys.executable)" 2^>nul`) do (
+  if not defined PYTHON_EXE set "PYTHON_EXE=%%E"
+)
+if defined PYTHON_EXE goto :findRealPython_done
+echo Could not find a valid Python installation.
+pause
+exit /b 1
+
+:findRealPython_done
 exit /b 0
