@@ -94,7 +94,7 @@ for /f "usebackq delims=" %%E in (`python -c "import sys; print(sys.executable)"
 if defined PYTHON_EXE goto :findRealPython_done
 
 rem 2) Common user installs
-for /f "delims=" %%P in ('dir /b /s "%LOCALAPPDATA%\Programs\Python\Python3*\python.exe" 2^>nul') do (
+for /f "delims=" %%P in ('dir /b /s "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" 2^>nul') do (
   if not defined PYTHON_EXE (
     "%%P" -c "import sys;print(1)" >nul 2>&1
     if not errorlevel 1 set "PYTHON_EXE=%%P"
@@ -103,7 +103,7 @@ for /f "delims=" %%P in ('dir /b /s "%LOCALAPPDATA%\Programs\Python\Python3*\pyt
 if defined PYTHON_EXE goto :findRealPython_done
 
 rem 3) Program Files installs
-for /f "delims=" %%P in ('dir /b /s "%ProgramFiles%\Python3*\python.exe" 2^>nul') do (
+for /f "delims=" %%P in ('dir /b /s "%ProgramFiles%\Python311\python.exe" 2^>nul') do (
   if not defined PYTHON_EXE (
     "%%P" -c "import sys;print(1)" >nul 2>&1
     if not errorlevel 1 set "PYTHON_EXE=%%P"
