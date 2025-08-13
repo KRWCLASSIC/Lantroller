@@ -6,7 +6,6 @@ set REQUIREMENTS_URL=https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/ref
 set SERVER_FILE=%INSTALL_DIR%\server.py
 set REQUIREMENTS_FILE=%INSTALL_DIR%\requirements.txt
 set WINGET_EXE=
-if "%~1"=="--resume" goto RESUME
 
 echo Creating installation directory %INSTALL_DIR%...
 mkdir "%INSTALL_DIR%" 2>nul
@@ -34,16 +33,14 @@ if %errorlevel% neq 0 (
     )
     echo Installing Python 3.11 via Winget...
     "!WINGET_EXE!" install --id "Python.Python.3.11" --exact --source winget --accept-source-agreements --disable-interactivity --silent --accept-package-agreements --force
-    echo Restarting installer in a new window to refresh PATH...
-    start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "cmd /c \"\"%~f0\" --resume\""
-    exit /b 0
+    echo Python 3.11 installed successfully.
 )
 
-:RESUME
+rem Resolve full Python path
 set "PYTHON_EXE="
 call :findRealPython
 if not defined PYTHON_EXE (
-    echo Could not resolve a usable Python interpreter after installation.
+    echo Could not resolve a usable Python interpreter.
     echo Please sign out/in or reboot, then re-run the installer.
     pause
     exit /b 1
@@ -89,13 +86,29 @@ exit /b 0
 
 :findRealPython
 set "PYTHON_EXE="
+rem 1) Prefer py launcher to get actual interpreter path
 for /f "usebackq delims=" %%E in (`python -c "import sys; print(sys.executable)" 2^>nul`) do (
   if not defined PYTHON_EXE set "PYTHON_EXE=%%E"
 )
 if defined PYTHON_EXE goto :findRealPython_done
-echo Could not find a valid Python installation.
-pause
-exit /b 1
+
+rem 2) Common user installs
+for /f "delims=" %%P in ('dir /b /s "%LOCALAPPDATA%\Programs\Python\Python3*\python.exe" 2^>nul') do (
+  if not defined PYTHON_EXE call :testCandidate "%%P"
+)
+if defined PYTHON_EXE goto :findRealPython_done
+
+rem 3) Program Files installs
+for /f "delims=" %%P in ('dir /b /s "%ProgramFiles%\Python3*\python.exe" 2^>nul') do (
+  if not defined PYTHON_EXE call :testCandidate "%%P"
+)
+if defined PYTHON_EXE goto :findRealPython_done
 
 :findRealPython_done
+exit /b 0
+
+:testCandidate
+set "_C=%%~1"
+"%_C%" -c "import sys;print(1)" >nul 2>&1
+if not errorlevel 1 set "PYTHON_EXE=%_C%"
 exit /b 0
