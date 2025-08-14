@@ -24,7 +24,7 @@ except ImportError:
 # ===== CONFIG =====
 PYTHON_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/server.py"
 HTML_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/ui.html"
-BACKEND_VERSION = "v4"
+BACKEND_VERSION = "v5"
 HOSTNAME = "controlled.local"
 PORT = 5000
 # ==================
