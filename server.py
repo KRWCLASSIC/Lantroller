@@ -41,6 +41,40 @@ if not logger.handlers:
     _handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
     logger.addHandler(_handler)
 
+def _has_internet() -> bool:
+    """Return True if the host appears to have Internet connectivity.
+
+    Uses a fast DNS socket probe and falls back to an HTTP HEAD against
+    our existing update endpoint.
+    """
+    try:
+        # Fast, low-overhead connectivity probe (no TLS): DNS to Google
+        socket.create_connection(("8.8.8.8", 53), timeout=2).close()
+        return True
+    except Exception:
+        pass
+    try:
+        # Fallback: check reachability of the UI update host
+        r = requests.head(HTML_UPDATE_URL, timeout=3)
+        return r.status_code < 500
+    except Exception:
+        return False
+
+def wait_for_internet():
+    """Block until Internet is available.
+
+    Logs periodic status so users can see why startup is paused.
+    """
+    if _has_internet():
+        return
+    logger.info("Waiting for Internet connectivity before starting services…")
+    delay_seconds = 1.0
+    max_delay = 5.0
+    while not _has_internet():
+        time.sleep(delay_seconds)
+        delay_seconds = min(max_delay, delay_seconds + 0.5)
+    logger.info("Internet connectivity detected. Continuing startup.")
+
 def _file_exists(path: str) -> bool:
     try:
         return path and os.path.exists(path)
@@ -564,6 +598,8 @@ if __name__ == "__main__":
     if "--install" in sys.argv:
         install_startup()
         sys.exit(0)
+    # Wait for network so we can fetch UI and register services reliably
+    wait_for_internet()
     fetch_ui()
     threading.Thread(target=register_mdns, daemon=True).start()
     app.run(host="0.0.0.0", port=PORT)
