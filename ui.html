@@ -128,7 +128,7 @@ button.danger { background: linear-gradient(135deg, var(--danger), #b91c1c); bor
 </style>
 <script>
 // Versions (edit here)
-const UI_VERSION = 'v6';
+const UI_VERSION = 'v7';
 const BACKEND_VERSION = 'local';
 
 async function run(cmd) {
@@ -333,6 +333,8 @@ window.addEventListener('load', () => {
     <div class="row mb-10">
       <div class="badge">Mini Keyboard</div>
       <div class="badge muted">Live key down/up</div>
+      <div class="flex-1"></div>
+      <button id="toggle-listen" class="small">Listen to PC Input</button>
     </div>
     <div id="mini-kb" class="mb-10"></div>
     <div class="row mb-10">
@@ -345,6 +347,7 @@ window.addEventListener('load', () => {
         <div class="row">
           <button id="lmb">LMB</button>
           <button id="rmb">RMB</button>
+          <button id="mmb">MMB</button>
         </div>
         <div class="row">
           <label for="sens" class="badge muted">Sensitivity</label>
@@ -363,10 +366,12 @@ window.addEventListener('load', () => {
   <script>
   // Mini keyboard definition
   const MINI_ROWS = [
-    ['ESC','1','2','3','4','5','6','7','8','9','0','BACKSPACE'],
+    ['ESC','F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'],
+    ['1','2','3','4','5','6','7','8','9','0','BACKSPACE'],
     ['TAB','Q','W','E','R','T','Y','U','I','O','P','ENTER'],
-    ['CTRL','A','S','D','F','G','H','J','K','L','SPACE'],
-    ['SHIFT','Z','X','C','V','B','N','M']
+    ['CTRL','A','S','D','F','G','H','J','K','L','SHIFT'],
+    ['CAPSLOCK','ALT','Z','X','C','V','B','N','M'],
+    ['SPACE']
   ];
 
   function renderMiniKeyboard(){
@@ -493,8 +498,10 @@ window.addEventListener('load', () => {
   const rmbBtn = document.getElementById('rmb');
   const wheelUp = document.getElementById('wheel-up');
   const wheelDown = document.getElementById('wheel-down');
+  const mmbBtn = document.getElementById('mmb');
   let lmbActive = false;
   let rmbActive = false;
+  let mmbActive = false;
 
   lmbBtn.onpointerdown = (e)=> { lmbActive = true; mouseButton('left','down'); };
   lmbBtn.onpointerup   = (e)=> { if (lmbActive) { mouseButton('left','up'); lmbActive = false; } };
@@ -508,7 +515,97 @@ window.addEventListener('load', () => {
   rmbBtn.onpointerleave= (e)=> { if (rmbActive) { console.log('[RMB] button pointerleave', { button: e.button, buttons: e.buttons, pointerType: e.pointerType }); mouseButton('right','up'); rmbActive = false; } else { console.log('[RMB] button pointerleave ignored (not active)'); } };
   rmbBtn.onpointercancel= (e)=> { if (rmbActive) { console.log('[RMB] button pointercancel', { button: e.button, buttons: e.buttons, pointerType: e.pointerType }); mouseButton('right','up'); rmbActive = false; } };
 
+  if (mmbBtn) mmbBtn.addEventListener('contextmenu', (e)=>{ e.preventDefault(); });
+  mmbBtn.onpointerdown = (e)=> { mmbActive = true; mouseButton('middle','down'); };
+  mmbBtn.onpointerup   = (e)=> { if (mmbActive) { mouseButton('middle','up'); mmbActive = false; } };
+  mmbBtn.onpointerleave= (e)=> { if (mmbActive) { mouseButton('middle','up'); mmbActive = false; } };
+  mmbBtn.onpointercancel= (e)=> { if (mmbActive) { mouseButton('middle','up'); mmbActive = false; } };
+
   renderMiniKeyboard();
+
+  const keyMap = {
+    "Escape": "ESC",
+    "F1": "F1", "F2": "F2", "F3": "F3", "F4": "F4", "F5": "F5", "F6": "F6",
+    "F7": "F7", "F8": "F8", "F9": "F9", "F10": "F10", "F11": "F11", "F12": "F12",
+    "Backquote": "~",
+    "Digit1": "1", "Digit2": "2", "Digit3": "3", "Digit4": "4", "Digit5": "5",
+    "Digit6": "6", "Digit7": "7", "Digit8": "8", "Digit9": "9", "Digit0": "0",
+    "Backspace": "BACKSPACE",
+    "Tab": "TAB",
+    "KeyQ": "Q", "KeyW": "W", "KeyE": "E", "KeyR": "R", "KeyT": "T", "KeyY": "Y",
+    "KeyU": "U", "KeyI": "I", "KeyO": "O", "KeyP": "P",
+    "Enter": "ENTER",
+    "ControlLeft": "CTRL", "ControlRight": "CTRL",
+    "KeyA": "A", "KeyS": "S", "KeyD": "D", "KeyF": "F", "KeyG": "G", "KeyH": "H",
+    "KeyJ": "J", "KeyK": "K", "KeyL": "L",
+    "ShiftLeft": "SHIFT", "ShiftRight": "SHIFT",
+    "AltLeft": "ALT", "AltRight": "ALT",
+    "KeyZ": "Z", "KeyX": "X", "KeyC": "C", "KeyV": "V", "KeyB": "B", "KeyN": "N",
+    "KeyM": "M",
+    "CapsLock": "CAPSLOCK",
+    "Space": "SPACE",
+  };
+
+  const keyElements = {};
+  function populateKeyElements() {
+    document.querySelectorAll('#mini-kb button').forEach(button => {
+      keyElements[button.textContent.toUpperCase()] = button;
+    });
+  }
+  populateKeyElements();
+
+  let isListening = false;
+  const toggleListenBtn = document.getElementById('toggle-listen');
+
+  function handleGlobalKeyDown(e) {
+    const mappedKey = keyMap[e.code] || e.key.toUpperCase();
+    if (mappedKey) {
+      sendKey(mappedKey, 'down');
+      const btn = keyElements[mappedKey];
+      if (btn) {
+        btn.classList.add('active'); // Add a class for visual feedback
+      }
+      e.preventDefault(); // Prevent default browser action for handled keys
+    }
+  }
+
+  function handleGlobalKeyUp(e) {
+    const mappedKey = keyMap[e.code] || e.key.toUpperCase();
+    if (mappedKey) {
+      sendKey(mappedKey, 'up');
+      const btn = keyElements[mappedKey];
+      if (btn) {
+        btn.classList.remove('active'); // Remove the active class
+      }
+      e.preventDefault(); // Prevent default browser action for handled keys
+    }
+  }
+
+  toggleListenBtn.addEventListener('click', () => {
+    isListening = !isListening;
+    if (isListening) {
+      toggleListenBtn.textContent = 'Listening...';
+      toggleListenBtn.classList.add('primary');
+      window.addEventListener('keydown', handleGlobalKeyDown);
+      window.addEventListener('keyup', handleGlobalKeyUp);
+    } else {
+      toggleListenBtn.textContent = 'Listen to PC Input';
+      toggleListenBtn.classList.remove('primary');
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+      window.removeEventListener('keyup', handleGlobalKeyUp);
+    }
+  });
+
+  // Add CSS for .active class
+  const style = document.createElement('style');
+  style.textContent = `
+    #mini-kb button.active {
+      background: var(--accent);
+      box-shadow: 0 0 0 3px rgba(108,140,255,.5);
+      transform: scale(0.98);
+    }
+  `;
+  document.head.appendChild(style);
   // Wheel buttons: hold to repeat
   let stopUp = null, stopDown = null;
   if (wheelUp){

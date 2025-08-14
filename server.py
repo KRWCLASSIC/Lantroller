@@ -1,13 +1,14 @@
 from flask import Flask, send_file, request, jsonify, Response, stream_with_context, redirect
 from logging.handlers import RotatingFileHandler
+import pydirectinput
 import subprocess
 import threading
 import tempfile
 import requests
+import argparse
 import logging
 import random
 import string
-import ctypes
 import shutil
 import socket
 import locale
@@ -24,7 +25,7 @@ except ImportError:
 # ===== CONFIG =====
 PYTHON_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/server.py"
 HTML_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/ui.html"
-BACKEND_VERSION = "v7"
+BACKEND_VERSION = "v8"
 HOSTNAME = "controlled.local"
 PORT = 5000
 # ==================
@@ -40,6 +41,20 @@ if not logger.handlers:
     _handler = RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=3, encoding='utf-8')
     _handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
     logger.addHandler(_handler)
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description="Lantroller Backend Server")
+parser.add_argument("--dev", action="store_true", help="Run in development mode")
+parser.add_argument("--port", type=int, default=PORT, help=f"Port to run the server on (default: {PORT})")
+args = parser.parse_args()
+
+# Apply parsed arguments
+if args.dev:
+    HOSTNAME = "dev.local"
+    logger.info("Running in development mode: hostname set to dev.local")
+if args.port != PORT:
+    PORT = args.port
+    logger.info(f"Using custom port: {PORT}")
 
 def _has_internet() -> bool:
     """Return True if the host appears to have Internet connectivity.
@@ -375,56 +390,72 @@ VK_MAP = {
     'SHIFT': 0x10,
     'CTRL': 0x11,
     'ALT': 0x12,
+    'F1': 0x70, 'F2': 0x71, 'F3': 0x72, 'F4': 0x73, 'F5': 0x74, 'F6': 0x75,
+    'F7': 0x76, 'F8': 0x77, 'F9': 0x78, 'F10': 0x79, 'F11': 0x7A, 'F12': 0x7B,
+    'CAPSLOCK': 0x14,
 }
 
 def _key_event_windows(vk_code: int, is_down: bool):
     try:
-        user32 = ctypes.windll.user32
-        KEYEVENTF_KEYUP = 0x0002
-        flags = 0 if is_down else KEYEVENTF_KEYUP
-        user32.keybd_event(vk_code, 0, flags, 0)
+        # pydirectinput works with key names, so we need to map vk_code back to key name
+        # This mapping is incomplete and should be expanded if more keys are needed.
+        key_name_map = {
+            0x0D: 'enter',
+            0x1B: 'esc',
+            0x20: 'space',
+            0x09: 'tab',
+            0x08: 'backspace',
+            0x25: 'left',
+            0x26: 'up',
+            0x27: 'right',
+            0x28: 'down',
+            0x10: 'shift',
+            0x11: 'ctrl',
+            0x12: 'alt',
+            0x70: 'f1', 0x71: 'f2', 0x72: 'f3', 0x73: 'f4', 0x74: 'f5', 0x75: 'f6',
+            0x76: 'f7', 0x77: 'f8', 0x78: 'f9', 0x79: 'f10', 0x7A: 'f11', 0x7B: 'f12',
+            0x14: 'capslock',
+            # Add letters A-Z
+            **{v: chr(v).lower() for k, v in VK_MAP.items() if len(k) == 1 and k.isalpha()},
+            # Add digits 0-9
+            **{v: k for k, v in VK_MAP.items() if len(k) == 1 and k.isdigit()},
+        }
+        key_to_send = key_name_map.get(vk_code)
+        if key_to_send:
+            if is_down:
+                pydirectinput.keyDown(key_to_send)
+            else:
+                pydirectinput.keyUp(key_to_send)
+            logger.info(f"Sent key event: {key_to_send} { 'down' if is_down else 'up'}")
+        else:
+            logger.warning(f"No pydirectinput mapping for VK code: {vk_code}")
     except Exception as e:
-        logger.error(f"keybd_event failed vk={vk_code} down={is_down}: {e}")
+        logger.error(f"pydirectinput key event failed vk={vk_code} down={is_down}: {e}")
 
 def _mouse_move_by_windows(dx: int, dy: int):
     try:
-        class POINT(ctypes.Structure):
-            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
-        user32 = ctypes.windll.user32
-        pt = POINT()
-        user32.GetCursorPos(ctypes.byref(pt))
-        user32.SetCursorPos(pt.x + int(dx), pt.y + int(dy))
+        pydirectinput.moveRel(int(dx), int(dy), relative=True)
+        logger.info(f"Mouse moved by dx={dx}, dy={dy}")
     except Exception as e:
-        logger.error(f"SetCursorPos failed: {e}")
+        logger.error(f"pydirectinput mouse move failed dx={dx} dy={dy}: {e}")
 
 def _mouse_button_windows(button: str, is_down: bool):
     try:
-        user32 = ctypes.windll.user32
-        MOUSEEVENTF_LEFTDOWN = 0x0002
-        MOUSEEVENTF_LEFTUP = 0x0004
-        MOUSEEVENTF_RIGHTDOWN = 0x0008
-        MOUSEEVENTF_RIGHTUP = 0x0010
-        MOUSEEVENTF_MIDDLEDOWN = 0x0020
-        MOUSEEVENTF_MIDDLEUP = 0x0040
-        if button == 'left':
-            flag = MOUSEEVENTF_LEFTDOWN if is_down else MOUSEEVENTF_LEFTUP
-        elif button == 'right':
-            flag = MOUSEEVENTF_RIGHTDOWN if is_down else MOUSEEVENTF_RIGHTUP
-        elif button == 'middle':
-            flag = MOUSEEVENTF_MIDDLEDOWN if is_down else MOUSEEVENTF_MIDDLEUP
+        if is_down:
+            pydirectinput.mouseDown(button=button)
         else:
-            raise ValueError(f"Unsupported mouse button '{button}'")
-        user32.mouse_event(flag, 0, 0, 0, 0)
+            pydirectinput.mouseUp(button=button)
+        logger.info(f"Mouse button event: {button} { 'down' if is_down else 'up'}")
     except Exception as e:
-        logger.error(f"mouse_event failed button={button} down={is_down}: {e}")
+        logger.error(f"pydirectinput mouse button failed button={button} down={is_down}: {e}")
 
 def _mouse_wheel_windows(delta: int):
     try:
-        user32 = ctypes.windll.user32
-        MOUSEEVENTF_WHEEL = 0x0800
-        user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, int(delta), 0)
+        # pydirectinput scroll takes positive for up, negative for down
+        pydirectinput.scroll(int(delta))
+        logger.info(f"Mouse wheel scrolled by {delta}")
     except Exception as e:
-        logger.error(f"mouse_event wheel failed delta={delta}: {e}")
+        logger.error(f"pydirectinput mouse wheel failed delta={delta}: {e}")
 
 @app.post("/input/key")
 def input_key():
@@ -555,82 +586,6 @@ def stop():
     threading.Thread(target=_stop).start()
     return jsonify({"status": "Stopping server..."})
 
-def install_startup():
-    """Install app to run on logon with highest privileges via Scheduled Task.
-
-    Attempts to create a Windows Scheduled Task with RunLevel=Highest.
-    If elevation is declined, falls back to a Startup folder .bat.
-    """
-    script_path = os.path.realpath(sys.argv[0])
-    task_name = "Lantroller"
-
-    # Prepare elevated calls to schtasks using windowless pythonw
-    pythonw_exe, argv = resolve_pythonw_invocation(script_path)
-    cmd_line = ' '.join(quote_arg(a) for a in argv)
-    schtasks_delete_args = f'/Delete /TN {quote_arg(task_name)} /F'
-    schtasks_create_args = f'/Create /TN {quote_arg(task_name)} /TR {quote_arg(cmd_line)} /SC ONLOGON /RL HIGHEST /F'
-
-    try:
-        # First, try to delete any existing task (ignore failures)
-        ctypes.windll.shell32.ShellExecuteW(
-            None,
-            "runas",
-            "schtasks.exe",
-            schtasks_delete_args,
-            None,
-            1,
-        )
-        # Then create the task elevated
-        rc = ctypes.windll.shell32.ShellExecuteW(
-            None,
-            "runas",
-            "schtasks.exe",
-            schtasks_create_args,
-            None,
-            1,
-        )
-        if rc <= 32:
-            raise RuntimeError(f"ShellExecuteW failed with code {rc}")
-        logger.info(f"Requested creation of elevated scheduled task '{task_name}'.")
-        logger.info("If you accepted the UAC prompt, the task will run with highest privileges on logon.")
-
-        # Try to start the task immediately so it activates without reboot/logon
-        try:
-            time.sleep(3)
-            schtasks_run_args = f'/Run /TN {quote_arg(task_name)}'
-            rc_run = ctypes.windll.shell32.ShellExecuteW(
-                None,
-                "runas",
-                "schtasks.exe",
-                schtasks_run_args,
-                None,
-                1,
-            )
-            if rc_run <= 32:
-                logger.warning(f"Could not start scheduled task now (code {rc_run}). It will run on next logon.")
-            else:
-                logger.info("Scheduled task started successfully.")
-        except Exception as e:
-            logger.warning(f"Failed to start scheduled task immediately: {e}")
-        return
-    except Exception as e:
-        logger.warning(f"Could not create elevated scheduled task (maybe UAC declined): {e}")
-        logger.warning("Falling back to per-user Startup shortcut (not elevated).")
-
-    # Fallback: non-elevated Startup folder launcher (VBS + pythonw to avoid console window)
-    startup_dir = os.path.join(os.getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
-    os.makedirs(startup_dir, exist_ok=True)
-    vbs_path = os.path.join(startup_dir, os.path.basename(sys.argv[0]).replace(".py", ".vbs"))
-    pythonw_path = pythonw_exe if _file_exists(pythonw_exe) else (shutil.which('pythonw') or 'pythonw')
-    cmd_str = f'{quote_arg(pythonw_path)} {quote_arg(script_path)}'
-    vbs = (
-        'Set WshShell = CreateObject("WScript.Shell")\n'
-        f'WshShell.Run {quote_arg(cmd_str)}, 0\n'
-    )
-    with open(vbs_path, "w", encoding="utf-8") as f:
-        f.write(vbs)
-    logger.info(f"Installed non-elevated startup launcher: {vbs_path}")
-
 def register_mdns():
     zeroconf = Zeroconf()
     ip_bytes = socket.inet_aton(socket.gethostbyname(socket.gethostname()))
@@ -647,7 +602,8 @@ def register_mdns():
 
 if __name__ == "__main__":
     if "--install" in sys.argv:
-        install_startup()
+        # install_startup() is removed, so we exit if --install is passed.
+        # The install logic is now expected to be handled by install.bat
         sys.exit(0)
     # Wait for network so we can fetch UI and register services reliably
     wait_for_internet()
