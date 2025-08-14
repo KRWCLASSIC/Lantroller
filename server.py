@@ -24,7 +24,7 @@ except ImportError:
 # ===== CONFIG =====
 PYTHON_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/server.py"
 HTML_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/ui.html"
-BACKEND_VERSION = "v5"
+BACKEND_VERSION = "v6"
 HOSTNAME = "controlled.local"
 PORT = 5000
 # ==================
@@ -176,7 +176,7 @@ def fetch_ui():
         ui_html_content = r.text
 
         # Replace BACKEND_VERSION in ui_html_content
-        ui_html_content = ui_html_content.replace("const BACKEND_VERSION = '';", f"const BACKEND_VERSION = '{BACKEND_VERSION}';")
+        ui_html_content = ui_html_content.replace("const BACKEND_VERSION = 'local';", f"const BACKEND_VERSION = '{BACKEND_VERSION}';")
 
         temp_name = "ui_" + ''.join(random.choices(string.ascii_lowercase + string.digits, k=6)) + ".html"
         temp_html_path = os.path.join(tempfile.gettempdir(), temp_name)
@@ -348,6 +348,22 @@ def get_logs():
     except Exception as e:
         return Response(f"Error reading logs: {e}\n", mimetype="text/plain", status=500)
 
+@app.post("/logs/clear")
+def clear_logs():
+    """Truncate the log file to empty."""
+    try:
+        if os.path.exists(LOG_PATH):
+            try:
+                with open(LOG_PATH, 'r+', encoding='utf-8') as f:
+                    f.truncate(0)
+            except Exception:
+                # Fallback if r+ fails
+                with open(LOG_PATH, 'w', encoding='utf-8'):
+                    pass
+        return jsonify({"status": "cleared"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ===== Input simulation (Windows) =====
 VK_MAP = {
     # Letters
@@ -410,6 +426,14 @@ def _mouse_button_windows(button: str, is_down: bool):
     except Exception as e:
         logger.error(f"mouse_event failed button={button} down={is_down}: {e}")
 
+def _mouse_wheel_windows(delta: int):
+    try:
+        user32 = ctypes.windll.user32
+        MOUSEEVENTF_WHEEL = 0x0800
+        user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, int(delta), 0)
+    except Exception as e:
+        logger.error(f"mouse_event wheel failed delta={delta}: {e}")
+
 @app.post("/input/key")
 def input_key():
     data = request.get_json(silent=True) or {}
@@ -448,6 +472,34 @@ def input_mouse_button():
     is_down = event_type == 'down'
     threading.Thread(target=_mouse_button_windows, args=(button, is_down), daemon=True).start()
     return jsonify({"status": "ok"})
+
+@app.post("/input/mouse/wheel")
+def input_mouse_wheel():
+    data = request.get_json(silent=True) or {}
+    if os.name != 'nt':
+        return jsonify({"error": "Mouse wheel only implemented for Windows"}), 400
+    # Accept either explicit delta (device units) or logical notches (+/-1 per wheel click)
+    delta = data.get("delta")
+    notches = data.get("notches")
+    direction = (data.get("dir") or "").lower()  # optional: 'up' or 'down'
+    try:
+        if delta is None:
+            if notches is not None:
+                delta = int(notches) * 120
+            elif direction in ("up", "down"):
+                delta = 120 if direction == "up" else -120
+            else:
+                delta = 120
+        delta = int(delta)
+        # Clamp to avoid extreme values
+        if delta > 120 * 10:
+            delta = 120 * 10
+        if delta < -120 * 10:
+            delta = -120 * 10
+    except Exception:
+        return jsonify({"error": "Invalid wheel delta/notches"}), 400
+    threading.Thread(target=_mouse_wheel_windows, args=(delta,), daemon=True).start()
+    return jsonify({"status": "ok", "delta": delta})
 
 @app.route("/kill/discord")
 def kill_discord():

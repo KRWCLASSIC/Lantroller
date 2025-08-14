@@ -28,6 +28,7 @@ button.primary { background: linear-gradient(135deg, var(--accent), #8b5cf6); bo
 button.success { background: linear-gradient(135deg, var(--accent-2), #16a34a); border-color: transparent; }
 button.warning { background: linear-gradient(135deg, var(--warning), #f97316); border-color: transparent; }
 button.danger { background: linear-gradient(135deg, var(--danger), #b91c1c); border-color: transparent; }
+.button.small, button.small { padding: 6px 8px; font-size: 12px; }
 .row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
 .input { display:flex; gap:8px; width:100%; }
 .input input { flex:1; min-width: 140px; background:#0f132d; color: var(--text); border:1px solid var(--border); border-radius:8px; padding:10px 12px; outline:none; }
@@ -46,6 +47,65 @@ button.danger { background: linear-gradient(135deg, var(--danger), #b91c1c); bor
 .touchpad-canvas { background:#0a0d1c; border:1px solid var(--border); border-radius:10px; touch-action:none; }
 .touchpad-wrap { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
 .col-gap-8 { display:flex; flex-direction:column; gap:8px; }
+/* Touchpad sensitivity slider */
+.sens-range { width: 160px; }
+/* Styled range input for sensitivity */
+.sens-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: #1c2140;
+  border: 1px solid var(--border);
+}
+.sens-range:focus { outline: none; }
+.sens-range::-webkit-slider-runnable-track {
+  height: 6px;
+  background: linear-gradient(90deg, var(--accent), #8b5cf6);
+  border-radius: 999px;
+}
+.sens-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  border: 1px solid var(--border);
+  margin-top: -5px;
+}
+.sens-range::-moz-range-track {
+  height: 6px;
+  background: linear-gradient(90deg, var(--accent), #8b5cf6);
+  border-radius: 999px;
+}
+.sens-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  border: none;
+}
+.sens-range::-ms-track {
+  height: 6px;
+  background: transparent;
+  border-color: transparent;
+  color: transparent;
+}
+.sens-range::-ms-fill-lower { background: var(--accent); border-radius: 999px; }
+.sens-range::-ms-fill-upper { background: #8b5cf6; border-radius: 999px; }
+
+/* Arrow buttons (pure text) */
+.icon-btn { padding: 4px 8px; font-size: 12px; line-height: 1; }
+/* Slightly smaller buttons for the mini keyboard */
+#mini-kb button { padding: 8px 10px; font-size: 12px; }
+/* Prevent native long-press/callout and selection on mini keyboard keys */
+#mini-kb button {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
 @media (max-width: 640px) {
   .container { padding: 16px; }
   .grid { grid-template-columns: 1fr; }
@@ -57,12 +117,19 @@ button.danger { background: linear-gradient(135deg, var(--danger), #b91c1c); bor
   .buttons button { width: 100%; }
   .terminal { height: 220px; }
   .terminal.small { height: 140px; }
+  /* Smaller mono font for logs/output on mobile */
+  .terminal { font-size: 12px; line-height: 1.35; }
+  .terminal.small { font-size: 11.5px; }
+  /* Make touchpad smaller and full-width on mobile */
+  .touchpad-canvas { width: 100%; height: 140px; }
+  /* Make mini keyboard more compact on mobile */
+  #mini-kb button { padding: 6px 8px; font-size: 11px; }
 }
 </style>
 <script>
 // Versions (edit here)
-const UI_VERSION = 'v4';
-const BACKEND_VERSION = '';
+const UI_VERSION = 'v5';
+const BACKEND_VERSION = 'local';
 
 async function run(cmd) {
   const res = await fetch(`/actions?cmd=${encodeURIComponent(cmd)}`);
@@ -93,13 +160,11 @@ function toast(msg) {
 async function execLive() {
   const input = document.getElementById('cmd');
   const output = document.getElementById('output');
-  const runBtn = document.getElementById('runBtn');
-  const stopBtn = document.getElementById('stopBtn');
+  const sendBtn = document.getElementById('sendBtn');
   const cmd = input.value.trim();
   if (!cmd) { input.focus(); return; }
   output.textContent = '';
-  runBtn.disabled = true;
-  stopBtn.disabled = false;
+  sendBtn.disabled = true;
   let controller = new AbortController();
   window._execController = controller;
   try {
@@ -124,13 +189,7 @@ async function execLive() {
   } catch (e) {
     output.textContent += `\n[Error] ${e}\n`;
   } finally {
-    runBtn.disabled = false;
-    stopBtn.disabled = true;
-  }
-}
-function stopExec() {
-  if (window._execController) {
-    window._execController.abort();
+    sendBtn.disabled = false;
   }
 }
 function quickFill(example) {
@@ -176,11 +235,36 @@ async function loadLogs() {
   }
 }
 
+function openRawLogs() {
+  window.open('/logs?tail=5000', '_blank');
+}
+
+async function clearLogs() {
+  try {
+    await fetch('/logs/clear', { method: 'POST' });
+    await loadLogs();
+  } catch (e) {}
+}
+
+  // Mouse wheel emulation (hold to repeat)
+  function startWheelLoop(direction){
+    const delta = direction === 'up' ? 120 : -120;
+    let active = true;
+    const tick = async () => {
+      if (!active) return;
+      try { await fetch('/input/mouse/wheel', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ delta }) }); } catch {}
+      // Repeat rate ~60ms for smooth but controlled scroll
+      setTimeout(tick, 60);
+    };
+    tick();
+    return () => { active = false; };
+  }
+
 window.addEventListener('load', () => {
   const verEl = document.getElementById('versions');
   if (verEl) verEl.textContent = `UI ${UI_VERSION} · Backend ${BACKEND_VERSION}`;
   pollHealth();
-  setInterval(pollHealth, 5000);
+  setInterval(pollHealth, 1000);
   loadLogs();
   setInterval(loadLogs, 5000);
 });
@@ -236,12 +320,10 @@ window.addEventListener('load', () => {
   <div class="panel">
     <div class="row mb-10">
       <div class="badge">Live Command Execution</div>
-      <div class="badge">Try <span class="kbd" onclick="quickFill('ipconfig')">ipconfig</span>, <span class="kbd" onclick="quickFill('whoami')">whoami</span>, <span class="kbd" onclick="quickFill('ping 8.8.8.8 -n 3')">ping 8.8.8.8 -n 3</span></div>
     </div>
     <div class="input mb-10">
       <input id="cmd" type="text" placeholder="Enter a command to run, e.g. ipconfig" onkeydown="if(event.key==='Enter') execLive()">
-      <button id="runBtn" class="success" onclick="execLive()">Run</button>
-      <button id="stopBtn" onclick="stopExec()" disabled>Stop</button>
+      <button id="sendBtn" class="success small" onclick="execLive()">Send</button>
     </div>
     <div class="terminal" id="output"></div>
   </div>
@@ -254,18 +336,24 @@ window.addEventListener('load', () => {
     <div id="mini-kb" class="mb-10"></div>
     <div class="row mb-10">
       <div class="badge">Touchpad</div>
-      <div class="badge muted">Drag to move · Buttons below</div>
+      <div class="badge muted">Drag to move · Buttons below · Sensitivity</div>
     </div>
     <div class="touchpad-wrap">
       <canvas id="touchpad" width="320" height="200" class="touchpad-canvas"></canvas>
       <div class="col-gap-8">
         <div class="row">
-          <button id="lmb-down">LMB Down</button>
-          <button id="lmb-up">LMB Up</button>
+          <button id="lmb">LMB</button>
+          <button id="rmb">RMB</button>
         </div>
         <div class="row">
-          <button id="rmb-down">RMB Down</button>
-          <button id="rmb-up">RMB Up</button>
+          <label for="sens" class="badge muted">Sensitivity</label>
+          <input id="sens" class="sens-range" type="range" min="0.5" max="3" step="0.1" value="1" />
+          <span id="sensVal" class="badge">1.0</span>
+        </div>
+        <div class="row">
+          <div class="badge muted">Wheel</div>
+          <button id="wheel-up" class="icon-btn" title="Wheel Up">▲</button>
+          <button id="wheel-down" class="icon-btn" title="Wheel Down">▼</button>
         </div>
       </div>
     </div>
@@ -289,9 +377,22 @@ window.addEventListener('load', () => {
       for (const key of row){
         const btn = document.createElement('button');
         btn.textContent = key.length === 1 ? key : key;
-        btn.onpointerdown = () => sendKey(key, 'down');
-        btn.onpointerup = () => sendKey(key, 'up');
-        btn.onpointerleave = () => sendKey(key, 'up');
+        let active = false;
+        btn.addEventListener('contextmenu', (e)=>{ e.preventDefault(); });
+        btn.onpointerdown = (e) => {
+          active = true;
+          try { btn.setPointerCapture(e.pointerId); } catch {}
+          sendKey(key, 'down');
+        };
+        btn.onpointerup = () => {
+          if (active) { sendKey(key, 'up'); active = false; }
+        };
+        btn.onpointerleave = () => {
+          if (active) { sendKey(key, 'up'); active = false; }
+        };
+        btn.onpointercancel = () => {
+          if (active) { sendKey(key, 'up'); active = false; }
+        };
         rowEl.appendChild(btn);
       }
       wrap.appendChild(rowEl);
@@ -315,6 +416,7 @@ window.addEventListener('load', () => {
     let last = null;
     const sendEveryMs = 16; // ~60Hz
     let lastSent = 0;
+    let sensitivity = 1.0;
 
     function drawBase(){
       ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -326,7 +428,10 @@ window.addEventListener('load', () => {
     drawBase();
 
     function sendDelta(dx, dy){
-      fetch('/input/mouse/move', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({dx, dy})}).catch(()=>{});
+      const sdx = Math.round(dx * sensitivity);
+      const sdy = Math.round(dy * sensitivity);
+      if (sdx === 0 && sdy === 0) return;
+      fetch('/input/mouse/move', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({dx: sdx, dy: sdy})}).catch(()=>{});
     }
 
     function handlePointer(e){
@@ -344,25 +449,85 @@ window.addEventListener('load', () => {
       }
     }
 
-    canvas.addEventListener('pointerdown', (e)=>{ canvas.setPointerCapture(e.pointerId); last = null; });
+    canvas.addEventListener('pointerdown', (e)=>{
+      canvas.setPointerCapture(e.pointerId);
+      if ((e.button === 2) || (e.buttons & 2)) {
+        console.log('[RMB] canvas pointerdown', { button: e.button, buttons: e.buttons, pointerType: e.pointerType });
+      }
+      last = null;
+    });
     canvas.addEventListener('pointermove', (e)=>{ if (e.pressure > 0 || e.buttons) handlePointer(e); });
     canvas.addEventListener('pointerup', ()=>{ last = null; });
+    canvas.addEventListener('contextmenu', (e)=>{ e.preventDefault(); console.log('[RMB] canvas contextmenu prevented'); });
+
+    const sens = document.getElementById('sens');
+    const sensVal = document.getElementById('sensVal');
+    if (sens && sensVal){
+      sens.addEventListener('input', ()=>{
+        sensitivity = parseFloat(sens.value) || 1.0;
+        sensVal.textContent = sensitivity.toFixed(1);
+      });
+    }
   })();
 
   function mouseButton(button, eventType){
-    fetch('/input/mouse/button', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({button, event: eventType})}).catch(()=>{});
+    if (button === 'right') {
+      console.log(`[RMB] send ${eventType}`);
+    }
+    fetch('/input/mouse/button', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({button, event: eventType})
+    }).then(r => {
+      if (button === 'right') {
+        console.log(`[RMB] server ${eventType} -> ${r.status}`);
+      }
+    }).catch(err => {
+      if (button === 'right') {
+        console.log(`[RMB] error ${eventType}:`, err);
+      }
+    });
   }
-  document.getElementById('lmb-down').onclick = ()=> mouseButton('left','down');
-  document.getElementById('lmb-up').onclick   = ()=> mouseButton('left','up');
-  document.getElementById('rmb-down').onclick = ()=> mouseButton('right','down');
-  document.getElementById('rmb-up').onclick   = ()=> mouseButton('right','up');
+  const lmbBtn = document.getElementById('lmb');
+  const rmbBtn = document.getElementById('rmb');
+  const wheelUp = document.getElementById('wheel-up');
+  const wheelDown = document.getElementById('wheel-down');
+  let lmbActive = false;
+  let rmbActive = false;
+
+  lmbBtn.onpointerdown = (e)=> { lmbActive = true; mouseButton('left','down'); };
+  lmbBtn.onpointerup   = (e)=> { if (lmbActive) { mouseButton('left','up'); lmbActive = false; } };
+  lmbBtn.onpointerleave= (e)=> { if (lmbActive) { mouseButton('left','up'); lmbActive = false; } };
+  lmbBtn.onpointercancel= (e)=> { if (lmbActive) { mouseButton('left','up'); lmbActive = false; } };
+
+  // Prevent native context menu on RMB button and gate events behind active state
+  if (rmbBtn) rmbBtn.addEventListener('contextmenu', (e)=>{ e.preventDefault(); console.log('[RMB] button contextmenu prevented'); });
+  rmbBtn.onpointerdown = (e)=> { rmbActive = true; console.log('[RMB] button pointerdown', { button: e.button, buttons: e.buttons, pointerType: e.pointerType }); mouseButton('right','down'); };
+  rmbBtn.onpointerup   = (e)=> { if (rmbActive) { console.log('[RMB] button pointerup',   { button: e.button, buttons: e.buttons, pointerType: e.pointerType }); mouseButton('right','up'); rmbActive = false; } else { console.log('[RMB] button pointerup ignored (not active)'); } };
+  rmbBtn.onpointerleave= (e)=> { if (rmbActive) { console.log('[RMB] button pointerleave', { button: e.button, buttons: e.buttons, pointerType: e.pointerType }); mouseButton('right','up'); rmbActive = false; } else { console.log('[RMB] button pointerleave ignored (not active)'); } };
+  rmbBtn.onpointercancel= (e)=> { if (rmbActive) { console.log('[RMB] button pointercancel', { button: e.button, buttons: e.buttons, pointerType: e.pointerType }); mouseButton('right','up'); rmbActive = false; } };
 
   renderMiniKeyboard();
+  // Wheel buttons: hold to repeat
+  let stopUp = null, stopDown = null;
+  if (wheelUp){
+    wheelUp.onpointerdown = (e)=>{ try{ wheelUp.setPointerCapture(e.pointerId);}catch{}; if (!stopUp) stopUp = startWheelLoop('up'); };
+    const end = ()=>{ if (stopUp){ stopUp(); stopUp = null; } };
+    wheelUp.onpointerup = end; wheelUp.onpointerleave = end; wheelUp.onpointercancel = end;
+  }
+  if (wheelDown){
+    wheelDown.onpointerdown = (e)=>{ try{ wheelDown.setPointerCapture(e.pointerId);}catch{}; if (!stopDown) stopDown = startWheelLoop('down'); };
+    const end = ()=>{ if (stopDown){ stopDown(); stopDown = null; } };
+    wheelDown.onpointerup = end; wheelDown.onpointerleave = end; wheelDown.onpointercancel = end;
+  }
   </script>
+  <div class="panel mt-12">
     <div class="row mb-10">
       <div class="badge">Logs</div>
       <div class="badge muted">Last 500 lines · auto-refresh</div>
       <div class="flex-1"></div>
+      <button onclick="openRawLogs()">Open Raw</button>
+      <button class="danger" onclick="clearLogs()">Clear</button>
       <button onclick="loadLogs()">Refresh</button>
     </div>
     <div class="terminal small" id="logs"></div>
