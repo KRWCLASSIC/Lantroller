@@ -24,7 +24,7 @@ except ImportError:
 # ===== CONFIG =====
 PYTHON_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/server.py"
 HTML_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/ui.html"
-BACKEND_VERSION = "v6"
+BACKEND_VERSION = "v7"
 HOSTNAME = "controlled.local"
 PORT = 5000
 # ==================
@@ -200,14 +200,18 @@ def update_self():
         logger.error(f"Update failed: {e}")
         return f"Update failed: {e}"
 
-def _kill_processes_windows(process_names):
+def _kill_processes_windows(process_names, use_wildcard=False):
     results = {}
     creation = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
     for name in process_names:
         try:
             # /T kills child processes, /F forces termination
+            cmd = ["taskkill", "/IM", name, "/F", "/T"]
+            if use_wildcard:
+                # taskkill /IM supports wildcards directly
+                pass
             completed = subprocess.run(
-                ["taskkill", "/IM", name, "/F", "/T"],
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 creationflags=creation,
@@ -231,34 +235,22 @@ def kill_named_process_groups(group: str):
         "vivaldi": ["vivaldi.exe"],
         "chromium": ["chromium.exe"],
     }
-    roblox_names = [
-        "RobloxPlayerBeta.exe",
-        "RobloxPlayerLauncher.exe",
-        "RobloxStudioBeta.exe",
-        "Roblox.exe",
-    ]
-    discord_names = [
-        "Discord.exe",
-        "DiscordCanary.exe",
-        "DiscordPTB.exe",
-    ]
-
     if group == "discord":
-        results = _kill_processes_windows(discord_names)
+        results = _kill_processes_windows(["discord*"], use_wildcard=True)
         logger.info("Kill Discord requested")
         return {"killed": results}
     if group == "roblox":
-        results = _kill_processes_windows(roblox_names)
+        results = _kill_processes_windows(["roblox*"], use_wildcard=True)
         logger.info("Kill Roblox requested")
+        return {"killed": results}
+    if group == "steam":
+        results = _kill_processes_windows(["steam*"], use_wildcard=True)
+        logger.info("Kill Steam requested")
         return {"killed": results}
     if group == "all-browsers" or group == "all":
         names = sorted({n for arr in browser_map.values() for n in arr})
         results = _kill_processes_windows(names)
         logger.info("Kill all browsers requested")
-        return {"killed": results}
-    if group in browser_map:
-        results = _kill_processes_windows(browser_map[group])
-        logger.info(f"Kill browser '{group}' requested")
         return {"killed": results}
     return {"error": f"Unknown group '{group}'"}, 400
 
@@ -512,6 +504,13 @@ def kill_discord():
 @app.route("/kill/roblox")
 def kill_roblox():
     payload, status = kill_named_process_groups("roblox"), 200
+    if isinstance(payload, tuple):
+        payload, status = payload
+    return jsonify(payload), status
+
+@app.route("/kill/steam")
+def kill_steam():
+    payload, status = kill_named_process_groups("steam"), 200
     if isinstance(payload, tuple):
         payload, status = payload
     return jsonify(payload), status

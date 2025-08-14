@@ -128,7 +128,7 @@ button.danger { background: linear-gradient(135deg, var(--danger), #b91c1c); bor
 </style>
 <script>
 // Versions (edit here)
-const UI_VERSION = 'v5';
+const UI_VERSION = 'v6';
 const BACKEND_VERSION = 'local';
 
 async function run(cmd) {
@@ -294,6 +294,7 @@ window.addEventListener('load', () => {
         <div class="buttons">
           <button onclick="doAction('/kill/discord')">Kill Discord</button>
           <button onclick="doAction('/kill/roblox')">Kill Roblox</button>
+          <button onclick="doAction('/kill/steam')">Kill Steam</button>
           <button onclick="doAction('/kill/browser?name=all')">Kill All Browsers</button>
         </div>
       </div>
