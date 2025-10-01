@@ -68,12 +68,8 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo Installation/Update complete.
-echo You can now run: "%PYTHON_EXE%" "%SERVER_FILE%"
-echo Or to install as a startup service ^(with UAC prompt^): "%PYTHON_EXE%" "%SERVER_FILE%" --install
-
 echo Running server.py with --install in a new PowerShell session to refresh PATH...
-start powershell.exe -NoExit -Command "cd '%INSTALL_DIR%'; & '%PYTHON_EXE%' 'server.py' --install; Read-Host 'Press Enter to continue...'"
+start powershell.exe -Command "cd '%INSTALL_DIR%'; & '%PYTHON_EXE%' 'server.py' --install"
 
 exit /b 0
 
