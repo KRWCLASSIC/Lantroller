@@ -25,7 +25,7 @@ except ImportError:
 # ===== CONFIG =====
 PYTHON_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/server.py"
 HTML_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/ui.html"
-BACKEND_VERSION = "v8"
+BACKEND_VERSION = "v8-fix"
 HOSTNAME = "controlled.local"
 PORT = 5000
 # ==================
@@ -586,6 +586,82 @@ def stop():
     threading.Thread(target=_stop).start()
     return jsonify({"status": "Stopping server..."})
 
+def install_startup():
+    """Install app to run on logon with highest privileges via Scheduled Task.
+
+    Attempts to create a Windows Scheduled Task with RunLevel=Highest.
+    If elevation is declined, falls back to a Startup folder .bat.
+    """
+    script_path = os.path.realpath(sys.argv[0])
+    task_name = "Lantroller"
+
+    # Prepare elevated calls to schtasks using windowless pythonw
+    pythonw_exe, argv = resolve_pythonw_invocation(script_path)
+    cmd_line = ' '.join(quote_arg(a) for a in argv)
+    schtasks_delete_args = f'/Delete /TN {quote_arg(task_name)} /F'
+    schtasks_create_args = f'/Create /TN {quote_arg(task_name)} /TR {quote_arg(cmd_line)} /SC ONLOGON /RL HIGHEST /F'
+
+    try:
+        # First, try to delete any existing task (ignore failures)
+        ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            "schtasks.exe",
+            schtasks_delete_args,
+            None,
+            1,
+        )
+        # Then create the task elevated
+        rc = ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            "schtasks.exe",
+            schtasks_create_args,
+            None,
+            1,
+        )
+        if rc <= 32:
+            raise RuntimeError(f"ShellExecuteW failed with code {rc}")
+        logger.info(f"Requested creation of elevated scheduled task '{task_name}'.")
+        logger.info("If you accepted the UAC prompt, the task will run with highest privileges on logon.")
+
+        # Try to start the task immediately so it activates without reboot/logon
+        try:
+            time.sleep(3)
+            schtasks_run_args = f'/Run /TN {quote_arg(task_name)}'
+            rc_run = ctypes.windll.shell32.ShellExecuteW(
+                None,
+                "runas",
+                "schtasks.exe",
+                schtasks_run_args,
+                None,
+                1,
+            )
+            if rc_run <= 32:
+                logger.warning(f"Could not start scheduled task now (code {rc_run}). It will run on next logon.")
+            else:
+                logger.info("Scheduled task started successfully.")
+        except Exception as e:
+            logger.warning(f"Failed to start scheduled task immediately: {e}")
+        return
+    except Exception as e:
+        logger.warning(f"Could not create elevated scheduled task (maybe UAC declined): {e}")
+        logger.warning("Falling back to per-user Startup shortcut (not elevated).")
+
+    # Fallback: non-elevated Startup folder launcher (VBS + pythonw to avoid console window)
+    startup_dir = os.path.join(os.getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+    os.makedirs(startup_dir, exist_ok=True)
+    vbs_path = os.path.join(startup_dir, os.path.basename(sys.argv[0]).replace(".py", ".vbs"))
+    pythonw_path = pythonw_exe if _file_exists(pythonw_exe) else (shutil.which('pythonw') or 'pythonw')
+    cmd_str = f'{quote_arg(pythonw_path)} {quote_arg(script_path)}'
+    vbs = (
+        'Set WshShell = CreateObject("WScript.Shell")\n'
+        f'WshShell.Run {quote_arg(cmd_str)}, 0\n'
+    )
+    with open(vbs_path, "w", encoding="utf-8") as f:
+        f.write(vbs)
+    logger.info(f"Installed non-elevated startup launcher: {vbs_path}")
+
 def register_mdns():
     zeroconf = Zeroconf()
     ip_bytes = socket.inet_aton(socket.gethostbyname(socket.gethostname()))
@@ -602,8 +678,7 @@ def register_mdns():
 
 if __name__ == "__main__":
     if "--install" in sys.argv:
-        # install_startup() is removed, so we exit if --install is passed.
-        # The install logic is now expected to be handled by install.bat
+        install_startup()
         sys.exit(0)
     # Wait for network so we can fetch UI and register services reliably
     wait_for_internet()
