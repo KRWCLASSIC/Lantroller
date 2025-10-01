@@ -11,11 +11,11 @@ import random
 import string
 import shutil
 import socket
+import ctypes
 import locale
 import time
 import sys
 import os
-import ctypes
 
 try:
     from zeroconf import Zeroconf, ServiceInfo
@@ -70,6 +70,7 @@ def _has_internet() -> bool:
         return True
     except Exception:
         pass
+    
     try:
         # Fallback: check reachability of the UI update host
         r = requests.head(HTML_UPDATE_URL, timeout=3)
