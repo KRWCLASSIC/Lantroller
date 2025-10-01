@@ -26,7 +26,7 @@ except ImportError:
 # ===== CONFIG =====
 PYTHON_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/server.py"
 HTML_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/ui.html"
-BACKEND_VERSION = "v9"
+BACKEND_VERSION = "v9-fix"
 HOSTNAME = "controlled.local"
 PORT = 5000
 # ==================
@@ -47,6 +47,7 @@ if not logger.handlers:
 parser = argparse.ArgumentParser(description="Lantroller Backend Server")
 parser.add_argument("--dev", action="store_true", help="Run in development mode")
 parser.add_argument("--port", type=int, default=PORT, help=f"Port to run the server on (default: {PORT})")
+parser.add_argument("--install", action="store_true", help="Install Lantroller as a startup service")
 args = parser.parse_args()
 
 # Apply parsed arguments
@@ -728,7 +729,7 @@ def register_mdns():
     logger.info(f"mDNS registered as {HOSTNAME}:{PORT}")
 
 if __name__ == "__main__":
-    if "--install" in sys.argv:
+    if args.install: # Use args.install after parsing arguments
         install_startup()
         sys.exit(0)
     # Wait for network so we can fetch UI and register services reliably
