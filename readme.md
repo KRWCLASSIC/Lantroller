@@ -14,7 +14,7 @@ For now entirely undetected by any antivirus software.
 
 ## Features
 
-- mDNS access via `controlled.local:5000/ui` (for Android devices there's also [mDNS helper script](https://github.com/KRWCLASSIC/Lantroller/blob/main/lantroller_mdns.py) that will return usable link without mDNS)
+- mDNS access via `http://controlled.local:5000/ui` (for Android devices there's also [mDNS helper script](https://github.com/KRWCLASSIC/Lantroller/blob/main/lantroller_mdns.py) that will return usable link without mDNS)
 - App Killers (Quick shortcuts)
 - Power actions
 - Semi-live command execution
@@ -24,6 +24,12 @@ For now entirely undetected by any antivirus software.
 - Restart Server
 - In-app updates for UI and Backend
 - Last resort options like stop and self-destruct
+
+## TODO
+
+- Rewrite UI
+- Some way for real SSH (paramiko? external ssh executable? idk)
+- Lan-less mode (ngrok? unsafe, selfhosted reverse proxies too...)
 
 ## Important Note
 
