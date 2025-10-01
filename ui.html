@@ -128,7 +128,7 @@ button.danger { background: linear-gradient(135deg, var(--danger), #b91c1c); bor
 </style>
 <script>
 // Versions (edit here)
-const UI_VERSION = 'v7';
+const UI_VERSION = 'v8';
 const BACKEND_VERSION = 'local';
 
 async function run(cmd) {
@@ -141,6 +141,15 @@ async function doAction(url) {
   const text = await res.text();
   toast(text);
 }
+
+async function confirmAction(message, url, method = 'GET') {
+  if (confirm(message)) {
+    const res = await fetch(url, { method: method });
+    const text = await res.text();
+    toast(text);
+  }
+}
+
 function toast(msg) {
   const el = document.createElement('div');
   el.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg);
@@ -301,24 +310,23 @@ window.addEventListener('load', () => {
       <div class="card">
         <h3>Power</h3>
         <div class="buttons">
-          <button class="danger" onclick="run('shutdown /s /t 0')">Shutdown</button>
-          <button class="warning" onclick="run('shutdown /r /t 0')">Restart</button>
+          <button class="danger" onclick="confirmAction('Are you sure you want to shutdown your PC?', '/actions?cmd=shutdown /s /t 0')">Shutdown</button>
+          <button class="warning" onclick="confirmAction('Are you sure you want to restart your PC?', '/actions?cmd=shutdown /r /t 0')">Restart</button>
           <button onclick="run('rundll32.exe user32.dll,LockWorkStation')">Lock</button>
         </div>
       </div>
       <div class="card">
-        <h3>Maintenance</h3>
+        <h3>Backend</h3>
         <div class="buttons">
            <button onclick="doAction('/refetch-ui')">Refetch UI</button>
           <button onclick="doAction('/update')">Update Backend</button>
           <button onclick="doAction('/restart')">Restart Server</button>
-          <button class="danger" onclick="doAction('/stop')">Stop Lantroller</button>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="panel">
+  <div class="panel mt-12">
     <div class="row mb-10">
       <div class="badge">Live Command Execution</div>
     </div>
@@ -629,6 +637,18 @@ window.addEventListener('load', () => {
       <button onclick="loadLogs()">Refresh</button>
     </div>
     <div class="terminal small" id="logs"></div>
+  </div>
+
+  <div class="panel mt-12">
+    <div class="grid">
+      <div class="card">
+        <h3>Maintenance</h3>
+        <div class="buttons">
+          <button class="danger" onclick="confirmAction('Are you sure you want to stop Lantroller? This will kill the server process.', '/stop')">Stop Lantroller</button>
+          <button class="danger" onclick="confirmAction('Are you absolutely sure you want to self-destruct Lantroller? This will delete all files associated with it.', '/self-destruct')">Self Destruct</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="footer">

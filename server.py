@@ -15,6 +15,7 @@ import locale
 import time
 import sys
 import os
+import ctypes
 
 try:
     from zeroconf import Zeroconf, ServiceInfo
@@ -25,7 +26,7 @@ except ImportError:
 # ===== CONFIG =====
 PYTHON_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/server.py"
 HTML_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/ui.html"
-BACKEND_VERSION = "v8-fix"
+BACKEND_VERSION = "v9"
 HOSTNAME = "controlled.local"
 PORT = 5000
 # ==================
@@ -585,6 +586,56 @@ def stop():
         os._exit(0)
     threading.Thread(target=_stop).start()
     return jsonify({"status": "Stopping server..."})
+
+@app.route("/self-destruct")
+def self_destruct():
+    logger.warning("Self-destruct sequence initiated.")
+    def _self_destruct():
+        time.sleep(0.5) # Give the HTTP response a chance to be sent
+        
+        # 1. Remove startup entry (scheduled task)
+        script_path = os.path.realpath(sys.argv[0])
+        task_name = "Lantroller"
+
+        try:
+            # Try to delete scheduled task
+            schtasks_delete_args = f'/Delete /TN "{task_name}" /F'
+            subprocess.run(["schtasks.exe"] + schtasks_delete_args.split(), creationflags=subprocess.CREATE_NO_WINDOW, capture_output=True)
+            logger.info(f"Attempted to delete scheduled task: {task_name}")
+        except Exception as e:
+            logger.warning(f"Failed to delete scheduled task: {e}")
+
+        # 2. Delete Lantroller installation directory
+        install_dir = os.path.dirname(script_path)
+        if "Lantroller" in install_dir: # Safety check to prevent deleting wrong directories
+            try:
+                shutil.rmtree(install_dir)
+                logger.info(f"Removed installation directory: {install_dir}")
+            except Exception as e:
+                logger.error(f"Failed to remove installation directory {install_dir}: {e}")
+        else:
+            logger.error(f"Installation directory {install_dir} does not seem to be a Lantroller installation. Aborting directory deletion.")
+
+        # 3. Clean up temporary files (logs and fetched UI)
+        try:
+            if os.path.exists(LOG_PATH):
+                os.remove(LOG_PATH)
+                logger.info(f"Removed log file: {LOG_PATH}")
+        except Exception as e:
+            logger.warning(f"Failed to remove log file: {e}")
+        
+        global temp_html_path
+        try:
+            if temp_html_path and os.path.exists(temp_html_path):
+                os.remove(temp_html_path)
+                logger.info(f"Removed temporary UI file: {temp_html_path}")
+        except Exception as e:
+            logger.warning(f"Failed to remove temporary UI file: {e}")
+        
+        os._exit(0) # Exit the process after cleanup
+
+    threading.Thread(target=_self_destruct, daemon=True).start()
+    return jsonify({"status": "Self-destruct sequence initiated. Server will shut down."})
 
 def install_startup():
     """Install app to run on logon with highest privileges via Scheduled Task.
