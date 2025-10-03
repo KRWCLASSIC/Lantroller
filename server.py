@@ -26,7 +26,7 @@ except ImportError:
 # ===== CONFIG =====
 PYTHON_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/server.py"
 HTML_UPDATE_URL = "https://raw.githubusercontent.com/KRWCLASSIC/Lantroller/refs/heads/main/ui.html"
-BACKEND_VERSION = "v9-fix"
+BACKEND_VERSION = "v10"
 HOSTNAME = "controlled.local"
 PORT = 5000
 # ==================
@@ -579,6 +579,45 @@ def restart():
             logger.error(f"Restart failed: {e}")
     threading.Thread(target=_restart).start()
     return jsonify({"status": "Restarting server..."})
+
+@app.route("/lock")
+def lock_workstation():
+    if os.name == 'nt':
+        try:
+            ctypes.windll.user32.LockWorkStation()
+            logger.info("Workstation locked")
+            return jsonify({"status": "Workstation locked"})
+        except Exception as e:
+            logger.error(f"Failed to lock workstation: {e}")
+            return jsonify({"error": f"Failed to lock workstation: {e}"}), 500
+    else:
+        return jsonify({"error": "Lock workstation only supported on Windows"}), 400
+
+@app.route("/shutdown")
+def shutdown_pc():
+    if os.name == 'nt':
+        try:
+            subprocess.Popen(["shutdown", "/s", "/t", "0"], shell=True)
+            logger.info("PC shutdown initiated")
+            return jsonify({"status": "PC shutdown initiated"})
+        except Exception as e:
+            logger.error(f"Failed to initiate shutdown: {e}")
+            return jsonify({"error": f"Failed to initiate shutdown: {e}"}), 500
+    else:
+        return jsonify({"error": "Shutdown only supported on Windows"}), 400
+
+@app.route("/reboot")
+def reboot_pc():
+    if os.name == 'nt':
+        try:
+            subprocess.Popen(["shutdown", "/r", "/t", "0"], shell=True)
+            logger.info("PC reboot initiated")
+            return jsonify({"status": "PC reboot initiated"})
+        except Exception as e:
+            logger.error(f"Failed to initiate reboot: {e}")
+            return jsonify({"error": f"Failed to initiate reboot: {e}"}), 500
+    else:
+        return jsonify({"error": "Reboot only supported on Windows"}), 400
 
 @app.route("/stop")
 def stop():
