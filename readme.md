@@ -27,6 +27,7 @@ For now entirely undetected by any antivirus software.
 
 ## TODO
 
+- Rewrite most API calls for easier implementation with wantroller and future UI rewrite (wtf is that "Lock" code...)
 - Rewrite UI
 - Some way for real SSH (paramiko? external ssh executable? idk)
 - Lan-less mode (ngrok? unsafe, selfhosted reverse proxies too...)
